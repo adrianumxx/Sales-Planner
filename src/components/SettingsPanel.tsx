@@ -1,5 +1,6 @@
-import React from 'react'
-import { X, Settings } from 'lucide-react'
+import React, { useState } from 'react'
+import { X, Settings, Sun, Moon, Sliders, RotateCcw } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { cityCoordinates } from '../utils/geo'
 
 interface SettingsPanelProps {
@@ -21,96 +22,221 @@ export function SettingsPanel({
   onVisitsPerDayChange,
   onDarkModeChange,
   onClose,
-  onRegenerate,
 }: SettingsPanelProps) {
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null)
+
+  const backdropVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+  }
+
+  const panelVariants = {
+    initial: {
+      opacity: 0,
+      scale: 0.95,
+      y: 20,
+    },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      y: 0,
+      transition: {
+        type: 'spring',
+        stiffness: 300,
+        damping: 30,
+      }
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.95,
+      y: 20,
+    },
+  }
+
+  const sectionVariants = {
+    hidden: { opacity: 0, y: 10 },
+    show: { opacity: 1, y: 0 },
+  }
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50 flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Settings
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition"
+    <AnimatePresence>
+      <motion.div
+        variants={backdropVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        onClick={onClose}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+      >
+        <motion.div
+          variants={panelVariants}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 rounded-3xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto relative"
+        >
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 bg-gradient-to-r from-white/80 to-slate-50/80 dark:from-slate-800/80 dark:to-slate-900/80 backdrop-blur-sm"
           >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-semibold text-slate-900 dark:text-slate-50 mb-2">
-              Home Location
-            </label>
-            <select
-              value={homeAddress}
-              onChange={(e) => onHomeAddressChange(e.target.value)}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            <motion.h2
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-slate-50 dark:to-slate-200 bg-clip-text text-transparent flex items-center gap-3"
             >
-              {cityCoordinates.map(city => (
-                <option key={city.city} value={city.city}>
-                  {city.city}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-              Starting point for distance calculations
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-900 dark:text-slate-50 mb-2">
-              Max Visits per Day
-            </label>
-            <div className="flex items-center gap-4">
-              <input
-                type="range"
-                min="1"
-                max="15"
-                value={visitsPerDay}
-                onChange={(e) => onVisitsPerDayChange(parseInt(e.target.value))}
-                className="flex-1"
-              />
-              <span className="text-xl font-bold text-indigo-600 dark:text-indigo-400 min-w-12 text-center">
-                {visitsPerDay}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-              Adjust planning intensity (1-15 visits/day)
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
-            <label className="text-sm font-semibold text-slate-900 dark:text-slate-50">
-              Dark Mode
-            </label>
-            <button
-              onClick={() => onDarkModeChange(!darkMode)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                darkMode ? 'bg-indigo-600' : 'bg-slate-300'
-              }`}
+              <Settings className="h-6 w-6 text-indigo-600 dark:text-cyan-400" />
+              Settings
+            </motion.h2>
+            <motion.button
+              whileHover={{ scale: 1.1, rotate: 90 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
             >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  darkMode ? 'translate-x-6' : 'translate-x-1'
+              <X className="h-6 w-6" />
+            </motion.button>
+          </motion.div>
+
+          <div className="p-6 space-y-8">
+            {/* Home Location */}
+            <motion.div
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.2 }}
+            >
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
+                <MapIcon className="h-4 w-4 text-indigo-600 dark:text-cyan-400" />
+                Home Location
+              </label>
+              <motion.select
+                whileHover={{ borderColor: '#6366F1' }}
+                value={homeAddress}
+                onChange={(e) => onHomeAddressChange(e.target.value)}
+                className="w-full px-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
+              >
+                {cityCoordinates.map((city) => (
+                  <option key={city.city} value={city.city}>
+                    {city.city}
+                  </option>
+                ))}
+              </motion.select>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                📍 Starting point for all distance calculations
+              </p>
+            </motion.div>
+
+            {/* Max Visits per Day */}
+            <motion.div
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.3 }}
+            >
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                Max Visits per Day
+              </label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range"
+                  min="1"
+                  max="15"
+                  value={visitsPerDay}
+                  onChange={(e) => onVisitsPerDayChange(parseInt(e.target.value))}
+                  className="flex-1 h-2 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  style={{
+                    background: `linear-gradient(to right, #6366F1 0%, #A855F7 ${(visitsPerDay / 15) * 100}%, #E5E7EB ${(visitsPerDay / 15) * 100}%, #E5E7EB 100%)`
+                  }}
+                />
+                <motion.span
+                  key={visitsPerDay}
+                  initial={{ scale: 1.2 }}
+                  animate={{ scale: 1 }}
+                  className="text-2xl font-bold text-indigo-600 dark:text-cyan-400 min-w-12 text-center bg-indigo-50 dark:bg-indigo-900/20 rounded-lg py-2"
+                >
+                  {visitsPerDay}
+                </motion.span>
+              </div>
+              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-2">
+                <span>Light schedule</span>
+                <span>Heavy schedule</span>
+              </div>
+            </motion.div>
+
+            {/* Dark Mode Toggle */}
+            <motion.div
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.4 }}
+              className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 rounded-2xl border border-slate-200 dark:border-slate-600"
+            >
+              <div className="flex items-center gap-3">
+                {darkMode ? (
+                  <Moon className="h-5 w-5 text-indigo-600" />
+                ) : (
+                  <Sun className="h-5 w-5 text-amber-500" />
+                )}
+                <label className="text-sm font-bold text-slate-900 dark:text-slate-50 cursor-pointer">
+                  Dark Mode
+                </label>
+              </div>
+              <motion.button
+                onClick={() => onDarkModeChange(!darkMode)}
+                whileTap={{ scale: 0.9 }}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
+                  darkMode
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600'
+                    : 'bg-gradient-to-r from-slate-300 to-slate-400'
                 }`}
-              />
-            </button>
-          </div>
+              >
+                <motion.span
+                  layout
+                  className="inline-block h-6 w-6 transform rounded-full bg-white shadow-lg"
+                  animate={{
+                    x: darkMode ? 28 : 2,
+                  }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                />
+              </motion.button>
+            </motion.div>
 
-          <button
-            onClick={() => {
-              onRegenerate()
-              onClose()
-            }}
-            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition font-medium"
-          >
-            Regenerate Plan
-          </button>
-        </div>
-      </div>
-    </div>
+            {/* Regenerate Button */}
+            <motion.button
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.5 }}
+              onClick={onClose}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-500 dark:to-purple-600 text-white font-bold py-3 rounded-2xl hover:shadow-xl hover:shadow-indigo-500/50 transition-all duration-300 flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="h-5 w-5" />
+              Save & Close
+            </motion.button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+function MapIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 20 20"
+    >
+      <path
+        fillRule="evenodd"
+        d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zm0 1.5h11.5a.75.75 0 01.75.75v11.5a.75.75 0 01-.75.75H4.25a.75.75 0 01-.75-.75V4.25a.75.75 0 01.75-.75z"
+        clipRule="evenodd"
+      />
+    </svg>
   )
 }
