@@ -154,14 +154,8 @@ function App() {
           homeAddress={planner.homeAddress}
           visitsPerDay={planner.visitsPerDay}
           darkMode={planner.darkMode}
-          onHomeAddressChange={(addr) => {
-            planner.setHomeAddress(addr)
-            planner.regeneratePlan()
-          }}
-          onVisitsPerDayChange={(count) => {
-            planner.setVisitsPerDay(count)
-            planner.regeneratePlan()
-          }}
+          onHomeAddressChange={planner.setHomeAddress}
+          onVisitsPerDayChange={planner.setVisitsPerDay}
           onDarkModeChange={planner.setDarkMode}
           onClose={() => planner.setShowSettings(false)}
           onRegenerate={planner.regeneratePlan}
