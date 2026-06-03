@@ -3,21 +3,26 @@ import { CheckCircle2, Circle, MapPin, Clock, Trash2, Edit2 } from 'lucide-react
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyColor, getUrgencyBadge } from '../utils/planning'
+import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 
 interface PlanViewerProps {
   plan: DailyPlan[]
   completedVisits: Set<string>
   notes: Record<string, string>
+  voiceNotes?: Record<string, Blob>
   onToggleComplete: (visitId: string) => void
   onUpdateNote: (visitId: string, note: string) => void
+  onSaveVoiceNote?: (visitId: string, audioData: Blob) => void
 }
 
 export function PlanViewer({
   plan,
   completedVisits,
   notes,
+  voiceNotes = {},
   onToggleComplete,
   onUpdateNote,
+  onSaveVoiceNote = (() => {}) as any,
 }: PlanViewerProps) {
   if (plan.length === 0) {
     return (
@@ -112,8 +117,10 @@ export function PlanViewer({
                     visit={visit}
                     completed={completedVisits.has(visit.id)}
                     notes={notes[visit.id] || ''}
+                    hasVoiceNote={!!voiceNotes[visit.id]}
                     onToggleComplete={() => onToggleComplete(visit.id)}
                     onUpdateNote={(note) => onUpdateNote(visit.id, note)}
+                    onSaveVoiceNote={(audio) => onSaveVoiceNote(visit.id, audio)}
                   />
                 ))}
               </AnimatePresence>
@@ -129,14 +136,18 @@ function VisitRow({
   visit,
   completed,
   notes,
+  hasVoiceNote,
   onToggleComplete,
   onUpdateNote,
+  onSaveVoiceNote,
 }: {
   visit: VisitDay
   completed: boolean
   notes: string
+  hasVoiceNote: boolean
   onToggleComplete: () => void
   onUpdateNote: (note: string) => void
+  onSaveVoiceNote: (audio: Blob) => void
 }) {
   const [editingNote, setEditingNote] = useState(false)
   const [noteValue, setNoteValue] = useState(notes)
@@ -244,40 +255,55 @@ function VisitRow({
             </div>
           </motion.div>
 
-          {/* Notes */}
-          {editingNote ? (
-            <motion.div
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex gap-2"
-            >
-              <input
-                type="text"
-                value={noteValue}
-                onChange={(e) => setNoteValue(e.target.value)}
-                placeholder="Add a note..."
-                className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                autoFocus
-              />
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleSaveNote}
-                className="px-4 py-2 text-xs bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg hover:shadow-lg transition-all"
+          {/* Notes Section */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.15 }}
+            className="space-y-2"
+          >
+            {/* Text Notes */}
+            {editingNote ? (
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex gap-2"
               >
-                Save
+                <input
+                  type="text"
+                  value={noteValue}
+                  onChange={(e) => setNoteValue(e.target.value)}
+                  placeholder="Add a text note..."
+                  className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  autoFocus
+                />
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleSaveNote}
+                  className="px-4 py-2 text-xs bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg hover:shadow-lg transition-all"
+                >
+                  Save
+                </motion.button>
+              </motion.div>
+            ) : (
+              <motion.button
+                whileHover={{ x: 2 }}
+                onClick={() => setEditingNote(true)}
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-cyan-400 transition-colors flex items-center gap-1"
+              >
+                <Edit2 className="h-3 w-3" />
+                {notes || 'Add text note...'}
               </motion.button>
-            </motion.div>
-          ) : (
-            <motion.button
-              whileHover={{ x: 2 }}
-              onClick={() => setEditingNote(true)}
-              className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-cyan-400 transition-colors flex items-center gap-1"
-            >
-              <Edit2 className="h-3 w-3" />
-              {notes || 'Add note...'}
-            </motion.button>
-          )}
+            )}
+
+            {/* Voice Notes */}
+            <VoiceNoteRecorder
+              visitId={visit.id}
+              onSaveVoiceNote={onSaveVoiceNote}
+              hasVoiceNote={hasVoiceNote}
+            />
+          </motion.div>
         </div>
       </div>
     </motion.div>

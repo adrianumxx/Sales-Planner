@@ -12,7 +12,8 @@
       "Bash(git branch *)",
       "Bash(git push *)",
       "Bash(vercel --version)",
-      "Bash(vercel --prod --confirm)"
+      "Bash(vercel --prod --confirm)",
+      "Bash(npx tsc *)"
     ]
   }
 }
