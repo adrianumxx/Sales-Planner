@@ -11,6 +11,10 @@ export function useFileParser() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const normalizeColumnName = (col: string): string => {
+    return col.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '')
+  }
+
   const parseCSV = useCallback((file: File): Promise<ParseResult> => {
     return new Promise((resolve) => {
       setLoading(true)
@@ -20,36 +24,45 @@ export function useFileParser() {
       reader.onload = (e) => {
         try {
           const text = e.target?.result as string
-          const lines = text.split('\n').filter(line => line.trim())
+          let lines = text.split('\n').filter(line => line.trim())
 
           if (lines.length < 2) {
             throw new Error('CSV file is empty or has insufficient rows')
           }
 
-          const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''))
-          const requiredColumns = ['quality', 'customerdetails', 'town', 'dayssincelastvisit']
-
-          const missingCols = requiredColumns.filter(col => !header.includes(col))
-          if (missingCols.length > 0) {
-            throw new Error(`Missing required columns: ${missingCols.join(', ')}`)
+          // Skip period/metadata row if present
+          if (lines[0].toLowerCase().includes('period')) {
+            lines = lines.slice(1)
           }
 
-          const qualityIdx = header.indexOf('quality')
-          const detailsIdx = header.indexOf('customerdetails')
-          const townIdx = header.indexOf('town')
-          const daysIdx = header.indexOf('dayssincelastvisit')
+          const header = lines[0].split(';').map(h => h.trim().toLowerCase().replace(/"/g, ''))
+          const normalizedHeader = header.map(normalizeColumnName)
+
+          // Map flexible column names
+          const qualityIdx = normalizedHeader.findIndex(h => h.includes('quality'))
+          const detailsIdx = normalizedHeader.findIndex(h => h.includes('customer') || h.includes('details') || h.includes('name'))
+          const townIdx = normalizedHeader.findIndex(h => h.includes('town') || h.includes('city') || h.includes('location'))
+          const daysIdx = normalizedHeader.findIndex(h =>
+            h.includes('days') && h.includes('last') && h.includes('visit')
+          )
+
+          if (qualityIdx === -1 || detailsIdx === -1 || townIdx === -1 || daysIdx === -1) {
+            throw new Error(`Missing required columns. Found: ${header.join(', ')}`)
+          }
 
           const clients: Client[] = []
           for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
+            const values = lines[i].split(';').map(v => v.trim().replace(/"/g, ''))
             if (values.length <= Math.max(qualityIdx, detailsIdx, townIdx, daysIdx)) continue
 
-            const quality = parseInt(values[qualityIdx]) || 0
+            const qualityStr = values[qualityIdx] || 'Standard'
+            const quality = qualityStr === 'Core' ? 9 : qualityStr === 'Premium' ? 10 : 7
             const customerDetails = values[detailsIdx] || ''
             const town = values[townIdx] || ''
-            const daysSinceLastVisit = parseInt(values[daysIdx]) || 0
+            const daysStr = values[daysIdx] || '0'
+            const daysSinceLastVisit = Math.round(parseFloat(daysStr)) || 0
 
-            if (customerDetails && town) {
+            if (customerDetails && town && daysSinceLastVisit > 0) {
               clients.push({ quality, customerDetails, town, daysSinceLastVisit })
             }
           }
