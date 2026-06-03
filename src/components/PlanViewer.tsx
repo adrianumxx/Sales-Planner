@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyColor, getUrgencyBadge } from '../utils/planning'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
+import { VisitTimer } from './VisitTimer'
 
 interface PlanViewerProps {
   plan: DailyPlan[]
@@ -20,9 +21,14 @@ export function PlanViewer({
   completedVisits,
   notes,
   voiceNotes = {},
+  activeVisit,
+  visitStartTimes = {},
+  visitDurations = {},
   onToggleComplete,
   onUpdateNote,
   onSaveVoiceNote = (() => {}) as any,
+  onStartVisit = (() => {}) as any,
+  onEndVisit = (() => {}) as any,
 }: PlanViewerProps) {
   if (plan.length === 0) {
     return (
@@ -118,9 +124,14 @@ export function PlanViewer({
                     completed={completedVisits.has(visit.id)}
                     notes={notes[visit.id] || ''}
                     hasVoiceNote={!!voiceNotes[visit.id]}
+                    isActiveVisit={activeVisit === visit.id}
+                    visitStartTime={visitStartTimes[visit.id]}
+                    visitDuration={visitDurations[visit.id]}
                     onToggleComplete={() => onToggleComplete(visit.id)}
                     onUpdateNote={(note) => onUpdateNote(visit.id, note)}
                     onSaveVoiceNote={(audio) => onSaveVoiceNote(visit.id, audio)}
+                    onStartVisit={() => onStartVisit(visit.id)}
+                    onEndVisit={(duration) => onEndVisit(visit.id, duration)}
                   />
                 ))}
               </AnimatePresence>
@@ -137,17 +148,27 @@ function VisitRow({
   completed,
   notes,
   hasVoiceNote,
+  isActiveVisit,
+  visitStartTime,
+  visitDuration,
   onToggleComplete,
   onUpdateNote,
   onSaveVoiceNote,
+  onStartVisit,
+  onEndVisit,
 }: {
   visit: VisitDay
   completed: boolean
   notes: string
   hasVoiceNote: boolean
+  isActiveVisit: boolean
+  visitStartTime?: number
+  visitDuration?: number
   onToggleComplete: () => void
   onUpdateNote: (note: string) => void
   onSaveVoiceNote: (audio: Blob) => void
+  onStartVisit: () => void
+  onEndVisit: (duration: number) => void
 }) {
   const [editingNote, setEditingNote] = useState(false)
   const [noteValue, setNoteValue] = useState(notes)
@@ -204,9 +225,9 @@ function VisitRow({
         </motion.button>
 
         <div className="flex-1 min-w-0">
-          {/* Title & Urgency */}
+          {/* Title & Urgency & Timer */}
           <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-1">
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -224,18 +245,27 @@ function VisitRow({
                 {visit.clientName}
               </h4>
             </div>
-            <motion.span
-              whileHover={{ scale: 1.05 }}
-              className={`text-xs font-bold px-3 py-1 rounded-lg whitespace-nowrap ${
-                visit.urgency === 'urgent'
-                  ? 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-100'
-                  : visit.urgency === 'attention'
-                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100'
-                    : 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
-              }`}
-            >
-              {visit.urgency}
-            </motion.span>
+            <div className="flex items-center gap-2">
+              <VisitTimer
+                visitId={visit.id}
+                onStartVisit={onStartVisit}
+                onEndVisit={onEndVisit}
+                isActive={isActiveVisit}
+                startTime={visitStartTime}
+              />
+              <motion.span
+                whileHover={{ scale: 1.05 }}
+                className={`text-xs font-bold px-3 py-1 rounded-lg whitespace-nowrap ${
+                  visit.urgency === 'urgent'
+                    ? 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-100'
+                    : visit.urgency === 'attention'
+                      ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100'
+                      : 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
+                }`}
+              >
+                {visit.urgency}
+              </motion.span>
+            </div>
           </div>
 
           {/* Info Row */}

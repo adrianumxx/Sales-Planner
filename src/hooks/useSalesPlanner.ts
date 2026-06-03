@@ -13,6 +13,9 @@ export function useSalesPlanner() {
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [showSettings, setShowSettings] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
+  const [activeVisit, setActiveVisit] = useState<string | null>(null)
+  const [visitStartTimes, setVisitStartTimes] = useState<Record<string, number>>({})
+  const [visitDurations, setVisitDurations] = useState<Record<string, number>>({})
 
   const loadClients = useCallback((clients: Client[]) => {
     setData(clients)
@@ -47,6 +50,21 @@ export function useSalesPlanner() {
       const next = new Set(prev)
       if (next.has(visitId)) next.delete(visitId)
       else next.add(visitId)
+      return next
+    })
+  }, [])
+
+  const startVisit = useCallback((visitId: string) => {
+    setActiveVisit(visitId)
+    setVisitStartTimes(prev => ({ ...prev, [visitId]: Date.now() }))
+  }, [])
+
+  const endVisit = useCallback((visitId: string, duration: number) => {
+    setActiveVisit(null)
+    setVisitDurations(prev => ({ ...prev, [visitId]: duration }))
+    setVisitStartTimes(prev => {
+      const next = { ...prev }
+      delete next[visitId]
       return next
     })
   }, [])
@@ -92,10 +110,15 @@ export function useSalesPlanner() {
     notes,
     showSettings,
     darkMode,
+    activeVisit,
+    visitStartTimes,
+    visitDurations,
     loadClients,
     regeneratePlan,
     toggleComplete,
     updateNote,
+    startVisit,
+    endVisit,
     setFilter,
     setHomeAddress,
     setVisitsPerDay,
