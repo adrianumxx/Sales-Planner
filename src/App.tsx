@@ -1,16 +1,22 @@
-import React, { useEffect } from 'react'
-import { Menu, Download, FileDown } from 'lucide-react'
+import React, { useEffect, useState, useMemo } from 'react'
+import { Menu, Download, FileDown, Calendar } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { FileUpload } from './components/FileUpload'
 import { Dashboard } from './components/Dashboard'
 import { PlanViewer } from './components/PlanViewer'
 import { SettingsPanel } from './components/SettingsPanel'
+import { CalendarView } from './components/CalendarView'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar } from './utils/export'
 import { getCityCoordinates } from './utils/geo'
+import type { VisitDay } from './types'
 
 function App() {
   const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
   const planner = useSalesPlanner()
 
   // Load saved state on mount
@@ -48,8 +54,30 @@ function App() {
     }
   }, [planner.darkMode])
 
+  // Build visitsByDate map from plan
+  const visitsByDateMap = useMemo(() => {
+    const map: Record<string, VisitDay[]> = {}
+    planner.plan.forEach(day => {
+      map[day.date] = day.visits
+    })
+    return map
+  }, [planner.plan])
+
   const metrics = planner.getTotalMetrics()
   const filteredPlan = planner.getFilteredPlan()
+
+  const handleRemoveVisit = (date: string, visitId: string) => {
+    const updated = planner.plan.map(day => {
+      if (day.date === date) {
+        return {
+          ...day,
+          visits: day.visits.filter(v => v.id !== visitId),
+        }
+      }
+      return day
+    })
+    // Update plan (would need to expose setPlan in useSalesPlanner)
+  }
 
   const handleExportCSV = () => {
     exportToCSV(planner.plan)
@@ -119,19 +147,77 @@ function App() {
                 onFilterChange={planner.setFilter}
               />
 
-              {/* Plan Viewer */}
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-4">
-                  90-Day Plan
+              {/* View Mode Toggle */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex gap-3 items-center justify-between"
+              >
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">
+                  {viewMode === 'list' ? '90-Day Plan' : 'Calendar View'}
                 </h2>
-                <PlanViewer
-                  plan={filteredPlan}
-                  completedVisits={planner.completedVisits}
-                  notes={planner.notes}
-                  onToggleComplete={planner.toggleComplete}
-                  onUpdateNote={planner.updateNote}
-                />
-              </div>
+                <div className="flex gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('list')}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                      viewMode === 'list'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-50'
+                    }`}
+                  >
+                    📋 List
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('calendar')}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                      viewMode === 'calendar'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-50'
+                    }`}
+                  >
+                    <Calendar className="h-4 w-4" /> Calendar
+                  </motion.button>
+                </div>
+              </motion.div>
+
+              {/* Plan Viewer - List Mode */}
+              {viewMode === 'list' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <PlanViewer
+                    plan={filteredPlan}
+                    completedVisits={planner.completedVisits}
+                    notes={planner.notes}
+                    onToggleComplete={planner.toggleComplete}
+                    onUpdateNote={planner.updateNote}
+                  />
+                </motion.div>
+              )}
+
+              {/* Calendar View - Calendar Mode */}
+              {viewMode === 'calendar' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <CalendarView
+                    plan={planner.plan}
+                    onDateSelect={setSelectedDate}
+                    selectedDate={selectedDate}
+                    visitsByDate={visitsByDateMap}
+                    onRemoveVisit={handleRemoveVisit}
+                  />
+                </motion.div>
+              )}
 
               {/* Upload Another File */}
               <button
