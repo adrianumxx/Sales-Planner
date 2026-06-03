@@ -196,8 +196,13 @@ function App() {
                     plan={filteredPlan}
                     completedVisits={planner.completedVisits}
                     notes={planner.notes}
+                    activeVisit={planner.activeVisit}
+                    visitStartTimes={planner.visitStartTimes}
+                    visitDurations={planner.visitDurations}
                     onToggleComplete={planner.toggleComplete}
                     onUpdateNote={planner.updateNote}
+                    onStartVisit={planner.startVisit}
+                    onEndVisit={planner.endVisit}
                   />
                 </motion.div>
               )}
