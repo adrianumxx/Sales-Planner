@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { Client, DailyPlan, CityCoord } from '../types'
 import { generatePlan } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
@@ -20,6 +20,17 @@ export function useSalesPlanner() {
     if (homeCoords) {
       const newPlan = generatePlan(clients, homeCoords, visitsPerDay)
       setPlan(newPlan)
+    }
+  }, [homeAddress, visitsPerDay])
+
+  // Auto-regenerate plan when settings change
+  useEffect(() => {
+    if (data.length > 0) {
+      const homeCoords = getCityCoordinates(homeAddress)
+      if (homeCoords) {
+        const newPlan = generatePlan(data, homeCoords, visitsPerDay)
+        setPlan(newPlan)
+      }
     }
   }, [homeAddress, visitsPerDay])
 
