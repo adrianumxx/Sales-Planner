@@ -20,21 +20,48 @@ export function generatePlan(
     ...ok.sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit),
   ]
 
-  // Create 90-day calendar (skip weekends)
+  // Generate dynamic time slots based on visitsPerDay
+  const generateTimeSlots = (count: number): string[] => {
+    const slots: string[] = []
+    const startHour = 9
+    const endHour = 17
+    const hoursAvailable = endHour - startHour - 1 // -1 for lunch break
+    const interval = Math.max(1, Math.floor((hoursAvailable * 60) / Math.max(count, 1)))
+
+    let currentMinutes = 0
+    for (let i = 0; i < count; i++) {
+      const totalMinutes = startHour * 60 + currentMinutes
+      const hour = Math.floor(totalMinutes / 60)
+      const minute = totalMinutes % 60
+
+      if (hour >= 12 && hour < 14) {
+        currentMinutes += 120 // Skip lunch break
+        continue
+      }
+
+      slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+      currentMinutes += interval
+    }
+
+    return slots.length > 0 ? slots : ['09:00', '14:00']
+  }
+
+  // Create 90-day calendar (only Tuesday-Friday)
   const today = new Date()
   const plan: DailyPlan[] = []
   let visitIndex = 0
-  let timeSlotIndex = 0
-  const timeSlots = [
-    '09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00'
-  ]
+  const timeSlots = generateTimeSlots(visitsPerDay)
 
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 180; i++) {
     const date = new Date(today)
     date.setDate(date.getDate() + i)
+    const dayOfWeek = date.getDay()
 
-    // Skip weekends
-    if (date.getDay() === 0 || date.getDay() === 6) continue
+    // Only work Tuesday (2) to Friday (5)
+    if (dayOfWeek < 2 || dayOfWeek > 5) continue
+
+    // Stop after 90 days of planning
+    if (plan.length >= Math.ceil(sorted.length / visitsPerDay) + 10) break
 
     const dateStr = date.toISOString().split('T')[0]
     const visits: VisitDay[] = []
@@ -54,13 +81,12 @@ export function generatePlan(
         town: client.town,
         distance,
         urgency,
-        timeSlot: timeSlots[timeSlotIndex % timeSlots.length],
+        timeSlot: timeSlots[v % timeSlots.length],
         completed: false,
         notes: '',
         quality: client.quality,
       })
 
-      timeSlotIndex++
       visitIndex++
     }
 
