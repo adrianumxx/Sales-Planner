@@ -9,6 +9,7 @@ import { CalendarView } from './components/CalendarView'
 import { LoginPage } from './components/LoginPage'
 import { FileManager } from './components/FileManager'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { EditVisitModal } from './components/EditVisitModal'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
 import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
@@ -96,6 +97,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
   const planner = useSalesPlanner()
   const { parseFile } = useFileParser()
+  const [editingVisit, setEditingVisit] = useState<{ visit: VisitDay; date: string } | null>(null)
 
   // Load saved state on mount
   useEffect(() => {
@@ -324,6 +326,28 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     selectedDate={selectedDate}
                     visitsByDate={visitsByDateMap}
                     onRemoveVisit={handleRemoveVisit}
+                    onVisitClick={(visit, date) => setEditingVisit({ visit, date })}
+                    onMoveVisit={(visit, fromDate, toDate) => {
+                      // Remove from old date, add to new date
+                      const oldVisits = visitsByDateMap[fromDate] || []
+                      const newVisits = visitsByDateMap[toDate] || []
+
+                      setVisitsByDate({
+                        ...visitsByDate,
+                        [fromDate]: oldVisits.filter(v => v.id !== visit.id),
+                        [toDate]: [...newVisits, visit],
+                      })
+                    }}
+                    onUpdateVisit={(visit) => {
+                      if (editingVisit) {
+                        setVisitsByDate({
+                          ...visitsByDate,
+                          [editingVisit.date]: visitsByDateMap[editingVisit.date]?.map(v =>
+                            v.id === visit.id ? visit : v
+                          ) || [],
+                        })
+                      }
+                    }}
                   />
                 </motion.div>
               )}
@@ -354,6 +378,24 @@ function AppContent({ user, onLogout }: AppContentProps) {
           onDarkModeChange={planner.setDarkMode}
           onClose={() => planner.setShowSettings(false)}
           onRegenerate={planner.regeneratePlan}
+        />
+      )}
+
+      {/* Edit Visit Modal */}
+      {editingVisit && (
+        <EditVisitModal
+          visit={editingVisit.visit}
+          isOpen={true}
+          onClose={() => setEditingVisit(null)}
+          onSave={(updatedVisit) => {
+            setVisitsByDate({
+              ...visitsByDate,
+              [editingVisit.date]: visitsByDateMap[editingVisit.date]?.map(v =>
+                v.id === updatedVisit.id ? updatedVisit : v
+              ) || [],
+            })
+            setEditingVisit(null)
+          }}
         />
       )}
       </div>
