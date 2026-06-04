@@ -152,6 +152,14 @@ function AppContent({ user, onLogout }: AppContentProps) {
     exportToPDF(commandResult ? commandResult.days : filteredPlan)
   }
 
+  // Logo click → back to the main dashboard, scrolled to top
+  const goHome = () => {
+    setViewMode('list')
+    setSelectedDate(null)
+    setCommandResult(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
@@ -160,7 +168,14 @@ function AppContent({ user, onLogout }: AppContentProps) {
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
+              <button
+                onClick={goHome}
+                className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-50 hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg"
+                title="Back to dashboard"
+                aria-label="Sales Planner — back to dashboard"
+              >
+                📅 Sales Planner
+              </button>
               <p className="hidden sm:block text-sm text-slate-500 dark:text-slate-400 mt-1">
                 {user.email} • smart area coverage & optimized routes
               </p>
