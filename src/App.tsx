@@ -16,7 +16,7 @@ import { getCityCoordinates } from './utils/geo'
 import type { VisitDay } from './types'
 
 function App() {
-  const { user, loading: authLoading, error: authError, login, logout, isAuthenticated } = useAuth()
+  const { user, loading: authLoading, error: authError, login, logout, signup, checkEmailExists, isAuthenticated } = useAuth()
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loginLoading, setLoginLoading] = useState(false)
   const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
@@ -24,6 +24,11 @@ function App() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
   const planner = useSalesPlanner()
+
+  // Handle email check
+  const handleCheckEmail = async (email: string) => {
+    return await checkEmailExists(email)
+  }
 
   // Handle login
   const handleLogin = async (email: string, password: string) => {
@@ -37,6 +42,18 @@ function App() {
     return success
   }
 
+  // Handle signup
+  const handleSignup = async (email: string, password: string) => {
+    setLoginLoading(true)
+    setLoginError(null)
+    const success = await signup(email, password)
+    setLoginLoading(false)
+    if (!success) {
+      setLoginError('Errore durante la registrazione')
+    }
+    return success
+  }
+
   // Handle logout
   const handleLogout = async () => {
     await logout()
@@ -44,7 +61,15 @@ function App() {
 
   // Show login page if not authenticated
   if (!isAuthenticated && !authLoading) {
-    return <LoginPage onLogin={handleLogin} loading={loginLoading} error={loginError || authError} />
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        onSignup={handleSignup}
+        onCheckEmail={handleCheckEmail}
+        loading={loginLoading}
+        error={loginError || authError}
+      />
+    )
   }
 
   // Show loading state
