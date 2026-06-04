@@ -1,0 +1,17 @@
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = 'https://qbufcxvafgizpabkjusy.supabase.co'
+const supabaseAnonKey = 'sb_publishable_aNbQ4r0dozZ37fRUhUT9kw_t73_ShJ8'
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+})
+
+export type User = {
+  id: string
+  email: string
+  user_metadata?: Record<string, any>
+}

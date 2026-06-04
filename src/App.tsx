@@ -1,23 +1,62 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { Menu, Download, FileDown, Calendar } from 'lucide-react'
+import { Menu, Download, FileDown, Calendar, LogOut } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { FileUpload } from './components/FileUpload'
 import { Dashboard } from './components/Dashboard'
 import { PlanViewer } from './components/PlanViewer'
 import { SettingsPanel } from './components/SettingsPanel'
 import { CalendarView } from './components/CalendarView'
+import { LoginPage } from './components/LoginPage'
+import { FileManager } from './components/FileManager'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
+import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar } from './utils/export'
 import { getCityCoordinates } from './utils/geo'
 import type { VisitDay } from './types'
 
 function App() {
+  const { user, loading: authLoading, error: authError, login, logout, isAuthenticated } = useAuth()
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [loginLoading, setLoginLoading] = useState(false)
   const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
   const planner = useSalesPlanner()
+
+  // Handle login
+  const handleLogin = async (email: string, password: string) => {
+    setLoginLoading(true)
+    setLoginError(null)
+    const success = await login(email, password)
+    setLoginLoading(false)
+    if (!success) {
+      setLoginError('Credenziali non valide o errore di connessione')
+    }
+    return success
+  }
+
+  // Handle logout
+  const handleLogout = async () => {
+    await logout()
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated && !authLoading) {
+    return <LoginPage onLogin={handleLogin} loading={loginLoading} error={loginError || authError} />
+  }
+
+  // Show loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }}>
+          <div className="w-12 h-12 border-3 border-indigo-500 border-t-cyan-500 rounded-full" />
+        </motion.div>
+      </div>
+    )
+  }
 
   // Load saved state on mount
   useEffect(() => {
@@ -43,7 +82,7 @@ function App() {
       completedVisits: Array.from(planner.completedVisits),
       notes: planner.notes,
     })
-  }, [planner.data, planner.filter, planner.homeAddress, planner.visitsPerDay, planner.darkMode, planner.completedVisits, planner.notes])
+  }, [planner.data, planner.filter, planner.homeAddress, planner.visitsPerDay, planner.darkMode, planner.completedVisits, planner.notes, setSavedState])
 
   // Apply dark mode to document
   useEffect(() => {
@@ -95,10 +134,48 @@ function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">90-day sales visit planner with geographic intelligence</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                {user?.email} • 90-day sales visit planner
+              </p>
             </div>
 
             <div className="flex items-center gap-3">
+              {/* File Manager */}
+              <FileManager
+                hasData={planner.data.length > 0}
+                onUpload={(file) => {
+                  const reader = new FileReader()
+                  reader.onload = async (e) => {
+                    const text = e.target?.result as string
+                    // Parse CSV and load
+                    try {
+                      const lines = text.split('\n').filter(l => l.trim())
+                      const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+                      const clients = lines.slice(1).map(line => {
+                        const values = line.split(',').map(v => v.trim())
+                        return {
+                          id: Math.random().toString(36).substr(2, 9),
+                          clientName: values[headers.indexOf('client name')] || '',
+                          town: values[headers.indexOf('town')] || '',
+                          lastVisitDays: parseInt(values[headers.indexOf('last visit (days)')] || '0'),
+                          urgency: (values[headers.indexOf('urgency status')] || 'ok').toLowerCase(),
+                        }
+                      }).filter(c => c.clientName)
+                      if (clients.length > 0) {
+                        planner.loadClients(clients)
+                      }
+                    } catch (err) {
+                      console.error('CSV parse error:', err)
+                    }
+                  }
+                  reader.readAsText(file)
+                }}
+                onClear={() => {
+                  planner.data.length = 0
+                  window.location.reload()
+                }}
+              />
+
               {planner.plan.length > 0 && (
                 <div className="hidden sm:flex items-center gap-2">
                   <button
@@ -123,6 +200,14 @@ function App() {
                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
               >
                 <Menu className="h-6 w-6 text-slate-900 dark:text-slate-50" />
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
+                title="Logout"
+              >
+                <LogOut className="h-6 w-6 text-slate-900 dark:text-slate-50" />
               </button>
             </div>
           </div>
@@ -196,13 +281,13 @@ function App() {
                     plan={filteredPlan}
                     completedVisits={planner.completedVisits}
                     notes={planner.notes}
-                    activeVisit={planner.activeVisit}
+                    visitTimerStates={planner.visitTimerStates}
+                    visitElapsedTimes={planner.visitElapsedTimes}
                     visitStartTimes={planner.visitStartTimes}
-                    visitDurations={planner.visitDurations}
+                    visitPausedTimes={planner.visitPausedTimes}
                     onToggleComplete={planner.toggleComplete}
                     onUpdateNote={planner.updateNote}
-                    onStartVisit={planner.startVisit}
-                    onEndVisit={planner.endVisit}
+                    onUpdateTimerState={planner.updateTimerState}
                   />
                 </motion.div>
               )}

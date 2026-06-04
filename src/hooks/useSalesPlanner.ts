@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect } from 'react'
 import type { Client, DailyPlan, CityCoord } from '../types'
 import { generatePlan } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
+import { useLocalStorage } from './useLocalStorage'
+
+type TimerState = 'idle' | 'running' | 'paused'
 
 export function useSalesPlanner() {
   const [data, setData] = useState<Client[]>([])
@@ -13,9 +16,10 @@ export function useSalesPlanner() {
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [showSettings, setShowSettings] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
-  const [activeVisit, setActiveVisit] = useState<string | null>(null)
-  const [visitStartTimes, setVisitStartTimes] = useState<Record<string, number>>({})
-  const [visitDurations, setVisitDurations] = useState<Record<string, number>>({})
+  const [visitTimerStates, setVisitTimerStates] = useLocalStorage<Record<string, TimerState>>('visitTimerStates', {})
+  const [visitElapsedTimes, setVisitElapsedTimes] = useLocalStorage<Record<string, number>>('visitElapsedTimes', {})
+  const [visitStartTimes, setVisitStartTimes] = useLocalStorage<Record<string, number>>('visitStartTimes', {})
+  const [visitPausedTimes, setVisitPausedTimes] = useLocalStorage<Record<string, number>>('visitPausedTimes', {})
 
   const loadClients = useCallback((clients: Client[]) => {
     setData(clients)
@@ -54,20 +58,46 @@ export function useSalesPlanner() {
     })
   }, [])
 
-  const startVisit = useCallback((visitId: string) => {
-    setActiveVisit(visitId)
-    setVisitStartTimes(prev => ({ ...prev, [visitId]: Date.now() }))
-  }, [])
+  const updateTimerState = useCallback((visitId: string, state: TimerState, elapsed: number, startTime?: number) => {
+    setVisitTimerStates(prev => ({ ...prev, [visitId]: state }))
+    setVisitElapsedTimes(prev => ({ ...prev, [visitId]: elapsed }))
 
-  const endVisit = useCallback((visitId: string, duration: number) => {
-    setActiveVisit(null)
-    setVisitDurations(prev => ({ ...prev, [visitId]: duration }))
-    setVisitStartTimes(prev => {
-      const next = { ...prev }
-      delete next[visitId]
-      return next
-    })
-  }, [])
+    if (state === 'running' && startTime) {
+      setVisitStartTimes(prev => ({ ...prev, [visitId]: startTime }))
+      setVisitPausedTimes(prev => {
+        const next = { ...prev }
+        delete next[visitId]
+        return next
+      })
+    } else if (state === 'paused') {
+      setVisitPausedTimes(prev => ({ ...prev, [visitId]: elapsed }))
+    } else if (state === 'idle') {
+      setVisitStartTimes(prev => {
+        const next = { ...prev }
+        delete next[visitId]
+        return next
+      })
+      setVisitPausedTimes(prev => {
+        const next = { ...prev }
+        delete next[visitId]
+        return next
+      })
+      setVisitElapsedTimes(prev => {
+        const next = { ...prev }
+        delete next[visitId]
+        return next
+      })
+    }
+  }, [setVisitTimerStates, setVisitElapsedTimes, setVisitStartTimes, setVisitPausedTimes])
+
+  const startVisit = useCallback((visitId: string) => {
+    updateTimerState(visitId, 'running', 0, Date.now())
+  }, [updateTimerState])
+
+  const endVisit = useCallback((visitId: string) => {
+    const elapsed = visitElapsedTimes[visitId] || 0
+    updateTimerState(visitId, 'idle', elapsed)
+  }, [visitElapsedTimes, updateTimerState])
 
   const updateNote = useCallback((visitId: string, note: string) => {
     setNotes(prev => ({ ...prev, [visitId]: note }))
@@ -110,13 +140,15 @@ export function useSalesPlanner() {
     notes,
     showSettings,
     darkMode,
-    activeVisit,
+    visitTimerStates,
+    visitElapsedTimes,
     visitStartTimes,
-    visitDurations,
+    visitPausedTimes,
     loadClients,
     regeneratePlan,
     toggleComplete,
     updateNote,
+    updateTimerState,
     startVisit,
     endVisit,
     setFilter,
