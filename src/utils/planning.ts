@@ -8,16 +8,16 @@ export function generatePlan(
 ): DailyPlan[] {
   if (!clients.length) return []
 
-  // Categorize clients
-  const urgent = clients.filter(c => c.daysSinceLastVisit > 200)
-  const attention = clients.filter(c => c.daysSinceLastVisit >= 130 && c.daysSinceLastVisit <= 200)
-  const ok = clients.filter(c => c.daysSinceLastVisit < 130)
+  // Categorize clients based on urgency field or lastVisitDays
+  const urgent = clients.filter(c => c.urgency === 'urgent' || c.lastVisitDays > 200)
+  const attention = clients.filter(c => c.urgency === 'attention' || (c.lastVisitDays >= 130 && c.lastVisitDays <= 200))
+  const ok = clients.filter(c => c.urgency === 'ok' || c.lastVisitDays < 130)
 
   // Sort by priority within each category
   const sortedByPriority = [
-    ...urgent.sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit),
-    ...attention.sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit),
-    ...ok.sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit),
+    ...urgent.sort((a, b) => b.lastVisitDays - a.lastVisitDays),
+    ...attention.sort((a, b) => b.lastVisitDays - a.lastVisitDays),
+    ...ok.sort((a, b) => b.lastVisitDays - a.lastVisitDays),
   ]
 
   // Generate dynamic time slots based on visitsPerDay
@@ -123,20 +123,16 @@ export function generatePlan(
     sortedDayClients.forEach((client, visitIdx) => {
       const distance = getDistanceFromHome(client.town, homeCoords)
 
-      let urgency: 'urgent' | 'attention' | 'ok' = 'ok'
-      if (client.daysSinceLastVisit > 200) urgency = 'urgent'
-      else if (client.daysSinceLastVisit >= 130) urgency = 'attention'
-
       visits.push({
         id: `${dateStr}-${visitIdx}`,
-        clientName: client.customerDetails,
+        clientName: client.clientName,
         town: client.town,
         distance,
-        urgency,
+        urgency: client.urgency || 'ok',
         timeSlot: timeSlots[visitIdx % timeSlots.length],
         completed: false,
         notes: '',
-        quality: client.quality,
+        quality: client.quality || 7,
       })
     })
 

@@ -39,31 +39,39 @@ export function useFileParser() {
           const normalizedHeader = header.map(normalizeColumnName)
 
           // Map flexible column names
-          const qualityIdx = normalizedHeader.findIndex(h => h.includes('quality'))
-          const detailsIdx = normalizedHeader.findIndex(h => h.includes('customer') || h.includes('details') || h.includes('name'))
+          const clientNameIdx = normalizedHeader.findIndex(h => h.includes('client') || h.includes('name') || h.includes('customer'))
           const townIdx = normalizedHeader.findIndex(h => h.includes('town') || h.includes('city') || h.includes('location'))
           const daysIdx = normalizedHeader.findIndex(h =>
             h.includes('days') && h.includes('last') && h.includes('visit')
           )
+          const urgencyIdx = normalizedHeader.findIndex(h => h.includes('urgency') || h.includes('status') || h.includes('priority'))
 
-          if (qualityIdx === -1 || detailsIdx === -1 || townIdx === -1 || daysIdx === -1) {
+          if (clientNameIdx === -1 || townIdx === -1 || daysIdx === -1) {
             throw new Error(`Missing required columns. Found: ${header.join(', ')}`)
           }
 
           const clients: Client[] = []
           for (let i = 1; i < lines.length; i++) {
             const values = lines[i].split(';').map(v => v.trim().replace(/"/g, ''))
-            if (values.length <= Math.max(qualityIdx, detailsIdx, townIdx, daysIdx)) continue
+            if (values.length <= Math.max(clientNameIdx, townIdx, daysIdx)) continue
 
-            const qualityStr = values[qualityIdx] || 'Standard'
-            const quality = qualityStr === 'Core' ? 9 : qualityStr === 'Premium' ? 10 : 7
-            const customerDetails = values[detailsIdx] || ''
+            const clientName = values[clientNameIdx] || ''
             const town = values[townIdx] || ''
             const daysStr = values[daysIdx] || '0'
-            const daysSinceLastVisit = Math.round(parseFloat(daysStr)) || 0
+            const lastVisitDays = Math.round(parseFloat(daysStr)) || 0
+            const urgencyStr = (values[urgencyIdx] || 'ok').toLowerCase()
+            let urgency: 'urgent' | 'attention' | 'ok' = 'ok'
+            if (urgencyStr === 'urgent') urgency = 'urgent'
+            else if (urgencyStr === 'attention') urgency = 'attention'
 
-            if (customerDetails && town && daysSinceLastVisit > 0) {
-              clients.push({ quality, customerDetails, town, daysSinceLastVisit })
+            if (clientName && town && lastVisitDays > 0) {
+              clients.push({
+                id: Math.random().toString(36).substr(2, 9),
+                clientName,
+                town,
+                lastVisitDays,
+                urgency,
+              })
             }
           }
 

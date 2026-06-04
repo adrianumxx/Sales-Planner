@@ -8,6 +8,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { CalendarView } from './components/CalendarView'
 import { LoginPage } from './components/LoginPage'
 import { FileManager } from './components/FileManager'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
 import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
@@ -152,8 +153,9 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
-      {/* Header */}
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
+        {/* Header */}
       <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -178,12 +180,17 @@ function App() {
                       const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
                       const clients = lines.slice(1).map(line => {
                         const values = line.split(',').map(v => v.trim())
+                        const urgencyRaw = (values[headers.indexOf('urgency status')] || 'ok').toLowerCase()
+                        let urgency: 'urgent' | 'attention' | 'ok' = 'ok'
+                        if (urgencyRaw === 'urgent') urgency = 'urgent'
+                        else if (urgencyRaw === 'attention') urgency = 'attention'
+
                         return {
                           id: Math.random().toString(36).substr(2, 9),
                           clientName: values[headers.indexOf('client name')] || '',
                           town: values[headers.indexOf('town')] || '',
                           lastVisitDays: parseInt(values[headers.indexOf('last visit (days)')] || '0'),
-                          urgency: (values[headers.indexOf('urgency status')] || 'ok').toLowerCase(),
+                          urgency,
                         }
                       }).filter(c => c.clientName)
                       if (clients.length > 0) {
@@ -362,7 +369,8 @@ function App() {
           onRegenerate={planner.regeneratePlan}
         />
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   )
 }
 

@@ -1,8 +1,12 @@
 export interface Client {
-  quality: number;
-  customerDetails: string;
+  id: string;
+  clientName: string;
   town: string;
-  daysSinceLastVisit: number;
+  lastVisitDays: number;
+  urgency: 'urgent' | 'attention' | 'ok';
+  quality?: number;
+  customerDetails?: string;
+  daysSinceLastVisit?: number;
 }
 
 export interface VisitDay {

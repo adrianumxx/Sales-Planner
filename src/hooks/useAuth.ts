@@ -15,13 +15,19 @@ export function useAuth() {
       try {
         // Handle email confirmation deep link from Supabase
         const hash = window.location.hash
-        if (hash && hash.includes('type=recovery')) {
-          await supabase.auth.verifyOtp({
-            token_hash: hash,
-            type: 'recovery',
-          })
+        if (hash && hash.includes('access_token')) {
+          try {
+            // Let Supabase automatically handle the hash
+            await supabase.auth.verifyOtp({
+              token_hash: hash,
+              type: 'recovery',
+            })
+          } catch (err) {
+            // Silently fail - Supabase session might already be established
+          }
         }
 
+        // Get current session
         const { data, error: sessionError } = await supabase.auth.getSession()
         if (sessionError) throw sessionError
 
@@ -34,9 +40,9 @@ export function useAuth() {
           })
         }
 
+        // Listen for auth changes
         const { data: authListener } = supabase.auth.onAuthStateChange(
           (event, newSession) => {
-            console.log('Auth state changed:', event)
             setSession(newSession)
             if (newSession?.user) {
               setUser({
@@ -53,7 +59,6 @@ export function useAuth() {
         unsubscribe = authListener?.subscription?.unsubscribe || (() => {})
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Auth error'
-        console.error('Auth init error:', err)
         setError(message)
       } finally {
         setLoading(false)

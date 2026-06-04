@@ -36,9 +36,13 @@ export function PlanViewer({
   visitPausedTimes = {},
   onToggleComplete,
   onUpdateNote,
-  onSaveVoiceNote = (() => {}) as any,
-  onUpdateTimerState = (() => {}) as any,
+  onSaveVoiceNote,
+  onUpdateTimerState,
 }: PlanViewerProps) {
+  // Provide default no-op callbacks if not provided
+  const handleSaveVoiceNote = onSaveVoiceNote || (() => {})
+  const handleUpdateTimerState = onUpdateTimerState || (() => {})
+
   if (plan.length === 0) {
     return (
       <motion.div
@@ -139,8 +143,8 @@ export function PlanViewer({
                     timerPausedTime={visitPausedTimes[visit.id] || 0}
                     onToggleComplete={() => onToggleComplete(visit.id)}
                     onUpdateNote={(note) => onUpdateNote(visit.id, note)}
-                    onSaveVoiceNote={(audio) => onSaveVoiceNote(visit.id, audio)}
-                    onUpdateTimerState={(state, elapsed, startTime) => onUpdateTimerState(visit.id, state, elapsed, startTime)}
+                    onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
+                    onUpdateTimerState={(state, elapsed, startTime) => handleUpdateTimerState(visit.id, state, elapsed, startTime)}
                   />
                 ))}
               </AnimatePresence>
@@ -257,7 +261,9 @@ function VisitRow({
             <div className="flex items-center gap-2">
               <VisitTimer
                 visitId={visit.id}
-                onStateChange={onUpdateTimerState}
+                onStateChange={(_, state, elapsed, startTime) =>
+                  onUpdateTimerState(state, elapsed, startTime)
+                }
                 state={timerState}
                 elapsed={timerElapsed}
                 startTime={timerStartTime}
@@ -340,7 +346,7 @@ function VisitRow({
             {/* Voice Notes */}
             <VoiceNoteRecorder
               visitId={visit.id}
-              onSaveVoiceNote={onSaveVoiceNote}
+              onSaveVoiceNote={(visitId, audio) => onSaveVoiceNote(audio)}
               hasVoiceNote={hasVoiceNote}
             />
           </motion.div>
