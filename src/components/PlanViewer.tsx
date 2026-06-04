@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import { CheckCircle2, Circle, MapPin, Clock, Trash2, Edit2 } from 'lucide-react'
+import { CheckCircle2, Circle, MapPin, Clock, Edit2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
-import { getUrgencyColor, getUrgencyBadge } from '../utils/planning'
+import { getUrgencyBadge } from '../utils/planning'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 import { VisitTimer } from './VisitTimer'
 
@@ -12,8 +12,7 @@ interface PlanViewerProps {
   plan: DailyPlan[]
   completedVisits: Set<string>
   notes: Record<string, string>
-  voiceNotes?: Record<string, Blob>
-  activeVisit?: string | null
+  voiceNotes?: Record<string, string>   // base64 data URLs
   visitTimerStates?: Record<string, TimerState>
   visitElapsedTimes?: Record<string, number>
   visitStartTimes?: Record<string, number>
@@ -29,7 +28,6 @@ export function PlanViewer({
   completedVisits,
   notes,
   voiceNotes = {},
-  activeVisit,
   visitTimerStates = {},
   visitElapsedTimes = {},
   visitStartTimes = {},
@@ -39,9 +37,8 @@ export function PlanViewer({
   onSaveVoiceNote,
   onUpdateTimerState,
 }: PlanViewerProps) {
-  // Provide default no-op callbacks if not provided
-  const handleSaveVoiceNote = onSaveVoiceNote || (() => {})
-  const handleUpdateTimerState = onUpdateTimerState || (() => {})
+  const handleSaveVoiceNote = onSaveVoiceNote ?? (() => {})
+  const handleUpdateTimerState = onUpdateTimerState ?? (() => {})
 
   if (plan.length === 0) {
     return (
@@ -67,12 +64,7 @@ export function PlanViewer({
 
   const containerVariants = {
     hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.05,
-      },
-    },
+    show: { opacity: 1, transition: { staggerChildren: 0.05 } },
   }
 
   const dayVariants = {
@@ -135,8 +127,9 @@ export function PlanViewer({
                     key={visit.id}
                     visit={visit}
                     completed={completedVisits.has(visit.id)}
-                    notes={notes[visit.id] || ''}
+                    noteText={notes[visit.id] || ''}
                     hasVoiceNote={!!voiceNotes[visit.id]}
+                    voiceNoteUrl={voiceNotes[visit.id]}
                     timerState={visitTimerStates[visit.id] || 'idle'}
                     timerElapsed={visitElapsedTimes[visit.id] || 0}
                     timerStartTime={visitStartTimes[visit.id]}
@@ -144,7 +137,9 @@ export function PlanViewer({
                     onToggleComplete={() => onToggleComplete(visit.id)}
                     onUpdateNote={(note) => onUpdateNote(visit.id, note)}
                     onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
-                    onUpdateTimerState={(state, elapsed, startTime) => handleUpdateTimerState(visit.id, state, elapsed, startTime)}
+                    onUpdateTimerState={(state, elapsed, startTime) =>
+                      handleUpdateTimerState(visit.id, state, elapsed, startTime)
+                    }
                   />
                 ))}
               </AnimatePresence>
@@ -159,8 +154,9 @@ export function PlanViewer({
 function VisitRow({
   visit,
   completed,
-  notes,
+  noteText,
   hasVoiceNote,
+  voiceNoteUrl,
   timerState,
   timerElapsed,
   timerStartTime,
@@ -172,8 +168,9 @@ function VisitRow({
 }: {
   visit: VisitDay
   completed: boolean
-  notes: string
+  noteText: string
   hasVoiceNote: boolean
+  voiceNoteUrl?: string
   timerState: TimerState
   timerElapsed: number
   timerStartTime?: number
@@ -184,7 +181,7 @@ function VisitRow({
   onUpdateTimerState: (state: TimerState, elapsed: number, startTime?: number) => void
 }) {
   const [editingNote, setEditingNote] = useState(false)
-  const [noteValue, setNoteValue] = useState(notes)
+  const [noteValue, setNoteValue] = useState(noteText)
 
   const handleSaveNote = () => {
     onUpdateNote(noteValue)
@@ -301,14 +298,14 @@ function VisitRow({
             </div>
           </motion.div>
 
-          {/* Notes Section */}
+          {/* Notes & Voice */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.15 }}
             className="space-y-2"
           >
-            {/* Text Notes */}
+            {/* Text Note */}
             {editingNote ? (
               <motion.div
                 initial={{ opacity: 0, y: 5 }}
@@ -319,7 +316,8 @@ function VisitRow({
                   type="text"
                   value={noteValue}
                   onChange={(e) => setNoteValue(e.target.value)}
-                  placeholder="Add a text note..."
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveNote()}
+                  placeholder="Aggiungi una nota..."
                   className="w-full sm:flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   autoFocus
                 />
@@ -329,7 +327,7 @@ function VisitRow({
                   onClick={handleSaveNote}
                   className="px-4 py-2 text-xs bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg hover:shadow-lg transition-all"
                 >
-                  Save
+                  Salva
                 </motion.button>
               </motion.div>
             ) : (
@@ -339,15 +337,16 @@ function VisitRow({
                 className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-cyan-400 transition-colors flex items-center gap-1"
               >
                 <Edit2 className="h-3 w-3" />
-                {notes || 'Add text note...'}
+                {noteText || 'Aggiungi nota...'}
               </motion.button>
             )}
 
-            {/* Voice Notes */}
+            {/* Voice Note */}
             <VoiceNoteRecorder
               visitId={visit.id}
-              onSaveVoiceNote={(visitId, audio) => onSaveVoiceNote(audio)}
+              onSaveVoiceNote={(id, audio) => onSaveVoiceNote(audio)}
               hasVoiceNote={hasVoiceNote}
+              voiceNoteUrl={voiceNoteUrl}
             />
           </motion.div>
         </div>
