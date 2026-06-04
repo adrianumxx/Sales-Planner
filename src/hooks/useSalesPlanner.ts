@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
-import type { Client, DailyPlan, CityCoord, VisitDay } from '../types'
+import { useState, useCallback, useEffect, useMemo } from 'react'
+import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
 import { useLocalStorage } from './useLocalStorage'
@@ -12,18 +12,24 @@ export function useSalesPlanner() {
   const [homeAddress, setHomeAddress] = useState('Bruxelles')
   const [visitsPerDay, setVisitsPerDay] = useState(7)
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
-  const [completedVisits, setCompletedVisits] = useState<Set<string>>(new Set())
-  const [notes, setNotes] = useState<Record<string, string>>({})
   const [showSettings, setShowSettings] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
+
+  // Persistent state — auto-saved to localStorage
+  const [completedVisitsArr, setCompletedVisitsArr] = useLocalStorage<string[]>('completedVisits', [])
+  const [notes, setNotes] = useLocalStorage<Record<string, string>>('visitNotes', {})
+  const [voiceNotes, setVoiceNotes] = useLocalStorage<Record<string, string>>('voiceNotes', {})
   const [visitTimerStates, setVisitTimerStates] = useLocalStorage<Record<string, TimerState>>('visitTimerStates', {})
   const [visitElapsedTimes, setVisitElapsedTimes] = useLocalStorage<Record<string, number>>('visitElapsedTimes', {})
   const [visitStartTimes, setVisitStartTimes] = useLocalStorage<Record<string, number>>('visitStartTimes', {})
   const [visitPausedTimes, setVisitPausedTimes] = useLocalStorage<Record<string, number>>('visitPausedTimes', {})
 
+  // Expose completedVisits as a Set for efficient .has() checks
+  const completedVisits = useMemo(() => new Set(completedVisitsArr), [completedVisitsArr])
+
   const loadClients = useCallback((clients: Client[]) => {
     setData(clients)
-    setFilter('all') // always reset filter on new file load
+    setFilter('all')
     const homeCoords = getCityCoordinates(homeAddress)
     if (homeCoords) {
       const newPlan = generatePlan(clients, homeCoords, visitsPerDay)
@@ -51,13 +57,13 @@ export function useSalesPlanner() {
   }, [data, homeAddress, visitsPerDay])
 
   const toggleComplete = useCallback((visitId: string) => {
-    setCompletedVisits(prev => {
-      const next = new Set(prev)
-      if (next.has(visitId)) next.delete(visitId)
-      else next.add(visitId)
-      return next
+    setCompletedVisitsArr(prev => {
+      const set = new Set(prev)
+      if (set.has(visitId)) set.delete(visitId)
+      else set.add(visitId)
+      return Array.from(set)
     })
-  }, [])
+  }, [setCompletedVisitsArr])
 
   const updateTimerState = useCallback((visitId: string, state: TimerState, elapsed: number, startTime?: number) => {
     setVisitTimerStates(prev => ({ ...prev, [visitId]: state }))
@@ -73,17 +79,13 @@ export function useSalesPlanner() {
     } else if (state === 'paused') {
       setVisitPausedTimes(prev => ({ ...prev, [visitId]: elapsed }))
     } else if (state === 'idle') {
+      // Keep elapsed time so the user can see how long the visit took
       setVisitStartTimes(prev => {
         const next = { ...prev }
         delete next[visitId]
         return next
       })
       setVisitPausedTimes(prev => {
-        const next = { ...prev }
-        delete next[visitId]
-        return next
-      })
-      setVisitElapsedTimes(prev => {
         const next = { ...prev }
         delete next[visitId]
         return next
@@ -102,11 +104,28 @@ export function useSalesPlanner() {
 
   const updateNote = useCallback((visitId: string, note: string) => {
     setNotes(prev => ({ ...prev, [visitId]: note }))
-  }, [])
+  }, [setNotes])
+
+  const saveVoiceNote = useCallback((visitId: string, blob: Blob) => {
+    if (!blob.size) {
+      // Empty blob signals deletion
+      setVoiceNotes(prev => {
+        const next = { ...prev }
+        delete next[visitId]
+        return next
+      })
+      return
+    }
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result as string
+      setVoiceNotes(prev => ({ ...prev, [visitId]: base64 }))
+    }
+    reader.readAsDataURL(blob)
+  }, [setVoiceNotes])
 
   const getFilteredPlan = useCallback((): DailyPlan[] => {
     if (filter === 'all') return plan
-
     return plan.map(day => ({
       ...day,
       visits: day.visits.filter(v => v.urgency === filter)
@@ -135,7 +154,6 @@ export function useSalesPlanner() {
     setPlan(prev => {
       let visitToMove: VisitDay | null = null
 
-      // Find the visit in the source day
       for (const day of prev) {
         if (day.date === fromDate) {
           const visit = day.visits.find(v => v.id === visitId)
@@ -148,19 +166,12 @@ export function useSalesPlanner() {
 
       if (!visitToMove) return prev
 
-      // Remove from source, add to destination
       return prev.map(day => {
         if (day.date === fromDate) {
-          return {
-            ...day,
-            visits: day.visits.filter(v => v.id !== visitId)
-          }
+          return { ...day, visits: day.visits.filter(v => v.id !== visitId) }
         }
         if (day.date === toDate) {
-          return {
-            ...day,
-            visits: [...day.visits, visitToMove]
-          }
+          return { ...day, visits: [...day.visits, visitToMove!] }
         }
         return day
       })
@@ -189,6 +200,7 @@ export function useSalesPlanner() {
     visitsPerDay,
     completedVisits,
     notes,
+    voiceNotes,
     showSettings,
     darkMode,
     visitTimerStates,
@@ -199,6 +211,7 @@ export function useSalesPlanner() {
     regeneratePlan,
     toggleComplete,
     updateNote,
+    saveVoiceNote,
     updateTimerState,
     startVisit,
     endVisit,

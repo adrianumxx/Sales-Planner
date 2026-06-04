@@ -119,7 +119,8 @@ function AppContent({ user, onLogout }: AppContentProps) {
     }
   }, [])
 
-  // Save state to localStorage on changes
+  // Save core planning state to localStorage on changes
+  // (notes, completedVisits, voiceNotes auto-persist in their own keys)
   useEffect(() => {
     setSavedState({
       data: planner.data,
@@ -127,10 +128,8 @@ function AppContent({ user, onLogout }: AppContentProps) {
       homeAddress: planner.homeAddress,
       visitsPerDay: planner.visitsPerDay,
       darkMode: planner.darkMode,
-      completedVisits: Array.from(planner.completedVisits),
-      notes: planner.notes,
     })
-  }, [planner.data, planner.filter, planner.homeAddress, planner.visitsPerDay, planner.darkMode, planner.completedVisits, planner.notes, setSavedState])
+  }, [planner.data, planner.filter, planner.homeAddress, planner.visitsPerDay, planner.darkMode, setSavedState])
 
   // Apply dark mode to document
   useEffect(() => {
@@ -274,8 +273,6 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 totalKm={metrics.totalKm}
                 urgentCount={metrics.urgentCount}
                 attentionCount={metrics.attentionCount}
-                filter={planner.filter}
-                onFilterChange={planner.setFilter}
               />
 
               {/* Command Bar */}
@@ -349,12 +346,14 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     plan={commandResult ? commandResult.days : filteredPlan}
                     completedVisits={planner.completedVisits}
                     notes={planner.notes}
+                    voiceNotes={planner.voiceNotes}
                     visitTimerStates={planner.visitTimerStates}
                     visitElapsedTimes={planner.visitElapsedTimes}
                     visitStartTimes={planner.visitStartTimes}
                     visitPausedTimes={planner.visitPausedTimes}
                     onToggleComplete={planner.toggleComplete}
                     onUpdateNote={planner.updateNote}
+                    onSaveVoiceNote={planner.saveVoiceNote}
                     onUpdateTimerState={planner.updateTimerState}
                   />
                 </motion.div>
