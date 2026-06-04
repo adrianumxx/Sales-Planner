@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import type { Client } from '../types'
+import { extractPostal, resolveCoords } from '../utils/geo'
 
 interface ParseResult {
   success: boolean
@@ -84,11 +85,19 @@ export function useFileParser() {
         const quality = qualityRaw === 'core' ? 9 : qualityRaw === 'develop' ? 6 : 7
 
         if (clientName && town && lastVisitDays > 0) {
+          // Resolve real coordinates (postal code from address, else town name).
+          // Offline, covers every Belgian address — enables radius/route logic.
+          const postalCode = extractPostal(address) || undefined
+          const coords = resolveCoords(town, address)
+
           clients.push({
             id: Math.random().toString(36).substr(2, 9),
             clientName,
             town,
             address: address || undefined,
+            postalCode,
+            lat: coords?.lat,
+            lon: coords?.lon,
             customerDetails: rawDetails,
             lastVisitDays,
             daysSinceLastVisit: lastVisitDays,

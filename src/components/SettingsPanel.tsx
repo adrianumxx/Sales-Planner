@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { X, Settings, Sun, Moon, Sliders, RotateCcw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cityCoordinates } from '../utils/geo'
+import { MAJOR_CITIES } from '../utils/geo'
 
 interface SettingsPanelProps {
   homeAddress: string
@@ -111,20 +111,21 @@ export function SettingsPanel({
                 <MapIcon className="h-4 w-4 text-indigo-600 dark:text-cyan-400" />
                 Home Location
               </label>
-              <motion.select
-                whileHover={{ borderColor: '#6366F1' }}
+              <input
+                type="text"
+                list="major-cities"
                 value={homeAddress}
                 onChange={(e) => onHomeAddressChange(e.target.value)}
+                placeholder="Es: Charleroi, Mons, La Louvière…"
                 className="w-full px-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
-              >
-                {cityCoordinates.map((city) => (
-                  <option key={city.city} value={city.city}>
-                    {city.city}
-                  </option>
+              />
+              <datalist id="major-cities">
+                {MAJOR_CITIES.map((c) => (
+                  <option key={c} value={c} />
                 ))}
-              </motion.select>
+              </datalist>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                📍 Starting point for all distance calculations
+                📍 Punto di partenza per il calcolo di distanze e percorsi
               </p>
             </motion.div>
 
