@@ -13,6 +13,15 @@ export function useAuth() {
 
     const initAuth = async () => {
       try {
+        // Handle email confirmation deep link from Supabase
+        const hash = window.location.hash
+        if (hash && hash.includes('type=recovery')) {
+          await supabase.auth.verifyOtp({
+            token_hash: hash,
+            type: 'recovery',
+          })
+        }
+
         const { data, error: sessionError } = await supabase.auth.getSession()
         if (sessionError) throw sessionError
 
@@ -26,7 +35,8 @@ export function useAuth() {
         }
 
         const { data: authListener } = supabase.auth.onAuthStateChange(
-          (_event, newSession) => {
+          (event, newSession) => {
+            console.log('Auth state changed:', event)
             setSession(newSession)
             if (newSession?.user) {
               setUser({
@@ -43,6 +53,7 @@ export function useAuth() {
         unsubscribe = authListener?.subscription?.unsubscribe || (() => {})
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Auth error'
+        console.error('Auth init error:', err)
         setError(message)
       } finally {
         setLoading(false)
@@ -72,16 +83,20 @@ export function useAuth() {
         })
 
         if (loginError) throw loginError
-        if (data.session?.user) {
-          setUser({
-            id: data.session.user.id,
-            email: data.session.user.email || '',
-            user_metadata: data.session.user.user_metadata,
-          })
+
+        if (data.session) {
           setSession(data.session)
+          if (data.session.user) {
+            setUser({
+              id: data.session.user.id,
+              email: data.session.user.email || '',
+              user_metadata: data.session.user.user_metadata,
+            })
+          }
+          return true
         }
 
-        return true
+        return false
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Login failed'
         setError(message)
