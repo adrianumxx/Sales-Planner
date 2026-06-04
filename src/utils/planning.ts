@@ -1,5 +1,5 @@
 import type { Client, DailyPlan, VisitDay, CityCoord } from '../types'
-import { getDistanceFromHome } from './geo'
+import { getDistanceFromHome, getCityCoordinates, getDistance } from './geo'
 
 // Urgency thresholds (days since last visit)
 const URGENT_DAYS    = 90  // 3+ months → top priority
@@ -160,6 +160,44 @@ function buildTimeSlots(count: number): string[] {
   }
 
   return slots.length > 0 ? slots : ['09:00', '11:00', '14:00', '16:00']
+}
+
+/**
+ * Re-orders a day's visits using nearest-neighbour routing starting from
+ * a given city (e.g. "I'm in Charleroi today — optimise my route from here").
+ * Also reassigns time slots to match the new order.
+ */
+export function rerouteDayFromCity(visits: VisitDay[], startCoords: CityCoord): VisitDay[] {
+  if (visits.length <= 1) return visits
+
+  const remaining = [...visits]
+  const ordered: VisitDay[] = []
+  let curLat = startCoords.lat
+  let curLon = startCoords.lon
+
+  while (remaining.length > 0) {
+    // Find the visit whose town is geographically closest to current position
+    let nearestIdx = 0
+    let nearestDist = Infinity
+
+    remaining.forEach((v, i) => {
+      const coords = getCityCoordinates(v.town)
+      if (coords) {
+        const d = getDistance(curLat, curLon, coords.lat, coords.lon)
+        if (d < nearestDist) { nearestDist = d; nearestIdx = i }
+      }
+    })
+
+    const next = remaining.splice(nearestIdx, 1)[0]
+    ordered.push(next)
+
+    const nextCoords = getCityCoordinates(next.town)
+    if (nextCoords) { curLat = nextCoords.lat; curLon = nextCoords.lon }
+  }
+
+  // Reassign time slots to match new order
+  const slots = buildTimeSlots(ordered.length)
+  return ordered.map((v, i) => ({ ...v, timeSlot: slots[i % slots.length] }))
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
