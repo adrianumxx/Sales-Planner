@@ -17,6 +17,7 @@ import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar } from './utils/export'
 import { useFileParser } from './hooks/useFileParser'
 import type { VisitDay, DailyPlan } from './types'
+import type { CommandResult } from './components/CommandBar'
 
 function App() {
   const { user, loading: authLoading, error: authError, login, logout, signup, checkEmailExists, isAuthenticated } = useAuth()
@@ -97,7 +98,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const planner = useSalesPlanner()
   const { parseFile } = useFileParser()
   const [editingVisit, setEditingVisit] = useState<{ visit: VisitDay; date: string } | null>(null)
-  const [commandResult, setCommandResult] = useState<{ label: string; days: DailyPlan[]; totalVisits: number } | null>(null)
+  const [commandResult, setCommandResult] = useState<CommandResult | null>(null)
 
   // Clean up old localStorage keys that might interfere
   useEffect(() => {
@@ -289,10 +290,18 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-xl text-sm text-indigo-700 dark:text-indigo-300"
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm border ${
+                      commandResult.type === 'reroute'
+                        ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                    }`}
                   >
-                    <span className="font-semibold">✨ {commandResult.totalVisits} visite</span>
-                    <span className="opacity-60">per "{commandResult.label}"</span>
+                    <span className="font-semibold">
+                      {commandResult.type === 'reroute' ? '📍' : '✨'} {commandResult.totalVisits} visite
+                    </span>
+                    <span className="opacity-70">
+                      {commandResult.description ?? `per "${commandResult.label}"`}
+                    </span>
                   </motion.div>
                 )}
               </AnimatePresence>
