@@ -334,6 +334,10 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onToggleComplete={planner.toggleComplete}
                     onUpdateNote={planner.updateNote}
                     onSaveVoiceNote={planner.saveVoiceNote}
+                    editable={!commandResult}
+                    onEditVisit={(visit, date) => setEditingVisit({ visit, date })}
+                    onMoveVisit={(visit, fromDate, toDate) => planner.moveVisit(fromDate, toDate, visit.id)}
+                    onReorderVisit={planner.reorderVisit}
                   />
                 </motion.div>
               )}
