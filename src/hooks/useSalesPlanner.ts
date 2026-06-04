@@ -36,6 +36,8 @@ export function useSalesPlanner(userId?: string) {
   const [homeAddress, setHomeAddress] = useLocalStorage('salesPlanner.homeAddress', 'Bruxelles')
   const [visitsPerDay, setVisitsPerDay] = useLocalStorage('salesPlanner.visitsPerDay', 7)
   const [darkMode, setDarkMode] = useLocalStorage('salesPlanner.darkMode', false)
+  // List-view horizon (weeks shown before the rest collapses into "Backlog"); 0 = all.
+  const [planHorizonWeeks, setPlanHorizonWeeks] = useLocalStorage('salesPlanner.planHorizonWeeks', 4)
 
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
@@ -433,6 +435,8 @@ export function useSalesPlanner(userId?: string) {
     voiceNotes,
     showSettings,
     darkMode,
+    planHorizonWeeks,
+    setPlanHorizonWeeks,
     adminDays,
     toggleAdminDay,
     loadClients,

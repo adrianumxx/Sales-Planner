@@ -319,6 +319,26 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 </div>
               </motion.div>
 
+              {/* Horizon selector — how many weeks before the rest goes to Backlog */}
+              {viewMode === 'list' && !commandResult && planner.plan.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Show:</span>
+                  {([['2 weeks', 2], ['4 weeks', 4], ['All', 0]] as const).map(([label, val]) => (
+                    <button
+                      key={label}
+                      onClick={() => planner.setPlanHorizonWeeks(val)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                        planner.planHorizonWeeks === val
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Plan Viewer - List Mode */}
               {viewMode === 'list' && (
                 <motion.div
@@ -335,6 +355,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onUpdateNote={planner.updateNote}
                     onSaveVoiceNote={planner.saveVoiceNote}
                     editable={!commandResult}
+                    horizonWeeks={commandResult ? 0 : planner.planHorizonWeeks}
                     onEditVisit={(visit, date) => setEditingVisit({ visit, date })}
                     onMoveVisit={(visit, fromDate, toDate) => planner.moveVisit(fromDate, toDate, visit.id)}
                     onReorderVisit={planner.reorderVisit}

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   CheckCircle2, Circle, MapPin, Clock, Edit2, ExternalLink, History,
-  ChevronDown, GripVertical, Pencil,
+  ChevronDown, GripVertical, Pencil, Archive,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
@@ -22,7 +22,11 @@ interface PlanViewerProps {
   onEditVisit?: (visit: VisitDay, date: string) => void
   onMoveVisit?: (visit: VisitDay, fromDate: string, toDate: string) => void
   onReorderVisit?: (date: string, draggedId: string, targetId: string) => void
+  /** Weeks shown before the rest collapses into a Backlog section. 0 = show all. */
+  horizonWeeks?: number
 }
+
+const BACKLOG_KEY = '__backlog__'
 
 /** Monday (local) of the week a date falls in — used as the week-group key. */
 function weekKey(dateStr: string): string {
@@ -83,6 +87,7 @@ export function PlanViewer({
   onEditVisit,
   onMoveVisit,
   onReorderVisit,
+  horizonWeeks = 0,
 }: PlanViewerProps) {
   const handleSaveVoiceNote = onSaveVoiceNote ?? (() => {})
 
@@ -126,103 +131,163 @@ export function PlanViewer({
     )
   }
 
+  const renderWeek = (week: WeekGroup) => {
+    const isOpen = expanded.has(week.key)
+    return (
+      <div
+        key={week.key}
+        className="rounded-2xl overflow-hidden border border-slate-200/70 dark:border-slate-700/70 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm"
+      >
+        {/* Week header — click to expand/collapse */}
+        <button
+          onClick={() => toggleWeek(week.key)}
+          className="w-full flex items-center justify-between gap-3 px-3 sm:px-5 py-3 sm:py-4 bg-gradient-to-r from-indigo-600/10 to-purple-600/10 dark:from-indigo-500/20 dark:to-purple-600/20 hover:from-indigo-600/15 hover:to-purple-600/15 transition-colors"
+          aria-expanded={isOpen}
+        >
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <motion.span animate={{ rotate: isOpen ? 0 : -90 }} className="flex-shrink-0">
+              <ChevronDown className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
+            </motion.span>
+            <span className="font-bold text-sm sm:text-lg text-slate-900 dark:text-slate-50 truncate">
+              {week.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-shrink-0">
+            {week.urgentCount > 0 && (
+              <span className="px-2 py-0.5 rounded-lg font-semibold bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-100">
+                {week.urgentCount} urgent
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-lg font-semibold bg-indigo-100 dark:bg-indigo-900/30 text-slate-700 dark:text-slate-200">
+              {week.visitCount}v
+            </span>
+            <span className="hidden sm:inline px-2 py-0.5 rounded-lg font-semibold bg-purple-100 dark:bg-purple-900/30 text-slate-700 dark:text-slate-200">
+              {week.totalKm}km
+            </span>
+          </div>
+        </button>
+
+        {/* Week body */}
+        <AnimatePresence initial={false}>
+          {isOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="p-2 sm:p-3 space-y-3">
+                {week.days.map((day) => (
+                  <div
+                    key={day.date}
+                    className="rounded-xl overflow-hidden bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/60"
+                  >
+                    {/* Day header */}
+                    <div className="flex justify-between items-center px-3 sm:px-4 py-2 border-l-4 border-indigo-500 dark:border-cyan-400 bg-slate-50/60 dark:bg-slate-800/40">
+                      <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-50">
+                        {formatDateLabel(day.date)}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
+                        <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
+                        <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.totalKm}km</span>
+                      </div>
+                    </div>
+
+                    {/* Visits */}
+                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {day.visits.map((visit) => (
+                        <VisitRow
+                          key={visit.id}
+                          visit={visit}
+                          completed={completedVisits.has(visit.id)}
+                          noteText={notes[visit.id] || ''}
+                          hasVoiceNote={!!voiceNotes[visit.id]}
+                          voiceNoteUrl={voiceNotes[visit.id]}
+                          editable={editable}
+                          isDragging={dragged?.visit.id === visit.id}
+                          isDropActive={!!dragged && dragged.visit.id !== visit.id}
+                          onToggleComplete={() => onToggleComplete(visit.id)}
+                          onUpdateNote={(note) => onUpdateNote(visit.id, note)}
+                          onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
+                          onEdit={() => onEditVisit?.(visit, day.date)}
+                          onDragStart={() => setDragged({ visit, fromDate: day.date })}
+                          onDragEnd={() => setDragged(null)}
+                          onDropOn={() => handleDropOn(day.date, visit)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    )
+  }
+
+  // Split the plan into an active horizon and a collapsed backlog.
+  const limit = horizonWeeks > 0 ? horizonWeeks : weeks.length
+  const horizonList = weeks.slice(0, limit)
+  const backlog = weeks.slice(limit)
+  const backlogVisits = backlog.reduce((s, w) => s + w.visitCount, 0)
+  const backlogKm = Math.round(backlog.reduce((s, w) => s + w.totalKm, 0) * 10) / 10
+  const backlogUrgent = backlog.reduce((s, w) => s + w.urgentCount, 0)
+  const backlogOpen = expanded.has(BACKLOG_KEY)
+
   return (
     <div className="space-y-4">
-      {weeks.map((week) => {
-        const isOpen = expanded.has(week.key)
-        return (
-          <div
-            key={week.key}
-            className="rounded-2xl overflow-hidden border border-slate-200/70 dark:border-slate-700/70 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm"
+      {horizonList.map(renderWeek)}
+
+      {backlog.length > 0 && (
+        <div className="rounded-2xl overflow-hidden border border-slate-300/70 dark:border-slate-600/70 bg-slate-100/50 dark:bg-slate-800/50">
+          <button
+            onClick={() => toggleWeek(BACKLOG_KEY)}
+            className="w-full flex items-center justify-between gap-3 px-3 sm:px-5 py-3 sm:py-4 bg-slate-200/50 dark:bg-slate-700/40 hover:bg-slate-200/80 dark:hover:bg-slate-700/60 transition-colors"
+            aria-expanded={backlogOpen}
           >
-            {/* Week header — click to expand/collapse */}
-            <button
-              onClick={() => toggleWeek(week.key)}
-              className="w-full flex items-center justify-between gap-3 px-3 sm:px-5 py-3 sm:py-4 bg-gradient-to-r from-indigo-600/10 to-purple-600/10 dark:from-indigo-500/20 dark:to-purple-600/20 hover:from-indigo-600/15 hover:to-purple-600/15 transition-colors"
-              aria-expanded={isOpen}
-            >
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                <motion.span animate={{ rotate: isOpen ? 0 : -90 }} className="flex-shrink-0">
-                  <ChevronDown className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-                </motion.span>
-                <span className="font-bold text-sm sm:text-lg text-slate-900 dark:text-slate-50 truncate">
-                  {week.label}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <motion.span animate={{ rotate: backlogOpen ? 0 : -90 }} className="flex-shrink-0">
+                <ChevronDown className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+              </motion.span>
+              <Archive className="h-4 w-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+              <span className="font-bold text-sm sm:text-lg text-slate-700 dark:text-slate-200 truncate">
+                Backlog · {backlog.length} more week{backlog.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-shrink-0">
+              {backlogUrgent > 0 && (
+                <span className="px-2 py-0.5 rounded-lg font-semibold bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-100">
+                  {backlogUrgent} urgent
                 </span>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 text-xs flex-shrink-0">
-                {week.urgentCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-lg font-semibold bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-100">
-                    {week.urgentCount} urgent
-                  </span>
-                )}
-                <span className="px-2 py-0.5 rounded-lg font-semibold bg-indigo-100 dark:bg-indigo-900/30 text-slate-700 dark:text-slate-200">
-                  {week.visitCount}v
-                </span>
-                <span className="hidden sm:inline px-2 py-0.5 rounded-lg font-semibold bg-purple-100 dark:bg-purple-900/30 text-slate-700 dark:text-slate-200">
-                  {week.totalKm}km
-                </span>
-              </div>
-            </button>
-
-            {/* Week body */}
-            <AnimatePresence initial={false}>
-              {isOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                  className="overflow-hidden"
-                >
-                  <div className="p-2 sm:p-3 space-y-3">
-                    {week.days.map((day) => (
-                      <div
-                        key={day.date}
-                        className="rounded-xl overflow-hidden bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/60"
-                      >
-                        {/* Day header */}
-                        <div className="flex justify-between items-center px-3 sm:px-4 py-2 border-l-4 border-indigo-500 dark:border-cyan-400 bg-slate-50/60 dark:bg-slate-800/40">
-                          <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-50">
-                            {formatDateLabel(day.date)}
-                          </h3>
-                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
-                            <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
-                            <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.totalKm}km</span>
-                          </div>
-                        </div>
-
-                        {/* Visits */}
-                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {day.visits.map((visit) => (
-                            <VisitRow
-                              key={visit.id}
-                              visit={visit}
-                              completed={completedVisits.has(visit.id)}
-                              noteText={notes[visit.id] || ''}
-                              hasVoiceNote={!!voiceNotes[visit.id]}
-                              voiceNoteUrl={voiceNotes[visit.id]}
-                              editable={editable}
-                              isDragging={dragged?.visit.id === visit.id}
-                              isDropActive={!!dragged && dragged.visit.id !== visit.id}
-                              onToggleComplete={() => onToggleComplete(visit.id)}
-                              onUpdateNote={(note) => onUpdateNote(visit.id, note)}
-                              onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
-                              onEdit={() => onEditVisit?.(visit, day.date)}
-                              onDragStart={() => setDragged({ visit, fromDate: day.date })}
-                              onDragEnd={() => setDragged(null)}
-                              onDropOn={() => handleDropOn(day.date, visit)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
               )}
-            </AnimatePresence>
-          </div>
-        )
-      })}
+              <span className="px-2 py-0.5 rounded-lg font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                {backlogVisits}v
+              </span>
+              <span className="hidden sm:inline px-2 py-0.5 rounded-lg font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                {backlogKm}km
+              </span>
+            </div>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {backlogOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="p-2 sm:p-3 space-y-4">
+                  {backlog.map(renderWeek)}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   )
 }
