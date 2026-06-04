@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
-import { todayStr } from '../utils/date'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
@@ -120,23 +119,21 @@ export function useSalesPlanner(userId?: string) {
         const homeCoords = getCityCoordinates(homeAddress)
         if (homeCoords) setPlan(generatePlan(data, homeCoords, visitsPerDay, adminDays))
       } else if (plan.length > 0) {
-        // Refresh a restored plan: roll dates forward if they've drifted into
-        // the past, and recompute route metrics (so older saved plans pick up
-        // real leg distances). Order and ids — i.e. manual edits — are kept.
+        // Refresh a restored plan: always re-date its buckets onto the canonical
+        // Mon–Fri workday sequence (so the work-week rule + admin days are applied
+        // uniformly, not just when dates drifted into the past), and recompute
+        // route metrics. Bucket grouping, order and ids — i.e. manual edits — kept.
         const homeCoords = getCityCoordinates(homeAddress)
-        const drifted = plan[0].date < todayStr()
-        if (drifted || homeCoords) {
-          setPlan(prev => {
-            let next = drifted ? rollForwardDates(prev, new Date(), adminDays) : prev
-            if (homeCoords) {
-              next = next.map(day => {
-                const r = recomputeDay(day.visits, homeCoords, false)
-                return { ...day, visits: r.visits, totalKm: r.totalKm }
-              })
-            }
-            return next
-          })
-        }
+        setPlan(prev => {
+          let next = rollForwardDates(prev, new Date(), adminDays)
+          if (homeCoords) {
+            next = next.map(day => {
+              const r = recomputeDay(day.visits, homeCoords, false)
+              return { ...day, visits: r.visits, totalKm: r.totalKm }
+            })
+          }
+          return next
+        })
       }
       return
     }

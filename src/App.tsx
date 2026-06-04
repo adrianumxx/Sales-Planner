@@ -289,7 +289,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 className="flex gap-2 sm:gap-3 items-center justify-between"
               >
                 <h2 className="text-base sm:text-xl font-bold text-slate-900 dark:text-slate-50">
-                  {viewMode === 'list' ? '2-Week Plan' : 'Calendar View'}
+                  {viewMode === 'list' ? 'Coverage Plan' : 'Calendar View'}
                 </h2>
                 <div className="flex gap-2">
                   <motion.button

@@ -43,6 +43,10 @@ interface WeekGroup {
 
 function buildWeeks(plan: DailyPlan[]): WeekGroup[] {
   const todayMonday = weekKey(toDateStr(new Date()))
+  const nm = parseLocalDate(todayMonday)
+  nm.setDate(nm.getDate() + 7)
+  const nextMonday = toDateStr(nm)
+
   const map = new Map<string, DailyPlan[]>()
   for (const day of plan) {
     const k = weekKey(day.date)
@@ -50,7 +54,7 @@ function buildWeeks(plan: DailyPlan[]): WeekGroup[] {
     map.get(k)!.push(day)
   }
   const keys = [...map.keys()].sort()
-  return keys.map((key, i) => {
+  return keys.map((key) => {
     const days = map.get(key)!
     const visitCount = days.reduce((s, d) => s + d.visits.length, 0)
     const totalKm = Math.round(days.reduce((s, d) => s + d.totalKm, 0) * 10) / 10
@@ -60,11 +64,10 @@ function buildWeeks(plan: DailyPlan[]): WeekGroup[] {
     const first = days[0].date
     const last = days[days.length - 1].date
     const range = `${formatDateLabel(first, { month: 'short', day: 'numeric' })} – ${formatDateLabel(last, { month: 'short', day: 'numeric' })}`
-    const rel =
-      key === todayMonday ? 'This week'
-      : key > todayMonday && keys[i - 1] === todayMonday ? 'Next week'
-      : `Week ${i + 1}`
-    return { key, label: `${rel} · ${range}`, days, visitCount, totalKm, urgentCount }
+    // Date range is the unambiguous primary label; a relative tag is added only
+    // for the current and next week.
+    const rel = key === todayMonday ? 'This week · ' : key === nextMonday ? 'Next week · ' : ''
+    return { key, label: `${rel}${range}`, days, visitCount, totalKm, urgentCount }
   })
 }
 
