@@ -98,6 +98,11 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const { parseFile } = useFileParser()
   const [editingVisit, setEditingVisit] = useState<{ visit: VisitDay; date: string } | null>(null)
 
+  // Clean up old localStorage keys that might interfere
+  useEffect(() => {
+    localStorage.removeItem('visitsByDate')
+  }, [])
+
   // Load saved state on mount
   useEffect(() => {
     if (savedState) {
