@@ -1,28 +1,46 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
 import { useLocalStorage } from './useLocalStorage'
 
-type TimerState = 'idle' | 'running' | 'paused'
+// One-time migration from the legacy combined 'salesPlannerState' blob to the
+// per-key persistence below. Runs before the hook reads localStorage.
+let legacyMigrated = false
+function migrateLegacyState() {
+  if (legacyMigrated) return
+  legacyMigrated = true
+  try {
+    if (window.localStorage.getItem('salesPlanner.data')) return
+    const legacy = window.localStorage.getItem('salesPlannerState')
+    if (!legacy) return
+    const s = JSON.parse(legacy)
+    if (s?.data?.length) window.localStorage.setItem('salesPlanner.data', JSON.stringify(s.data))
+    if (s?.homeAddress) window.localStorage.setItem('salesPlanner.homeAddress', JSON.stringify(s.homeAddress))
+    if (s?.visitsPerDay != null) window.localStorage.setItem('salesPlanner.visitsPerDay', JSON.stringify(s.visitsPerDay))
+    if (typeof s?.darkMode === 'boolean') window.localStorage.setItem('salesPlanner.darkMode', JSON.stringify(s.darkMode))
+  } catch {
+    // ignore malformed legacy state
+  }
+}
 
 export function useSalesPlanner() {
-  const [data, setData] = useState<Client[]>([])
-  const [plan, setPlan] = useState<DailyPlan[]>([])
-  const [homeAddress, setHomeAddress] = useState('Bruxelles')
-  const [visitsPerDay, setVisitsPerDay] = useState(7)
+  migrateLegacyState()
+
+  // Persistent core state — survives reloads (incl. manual plan edits)
+  const [data, setData] = useLocalStorage<Client[]>('salesPlanner.data', [])
+  const [plan, setPlan] = useLocalStorage<DailyPlan[]>('salesPlanner.plan', [])
+  const [homeAddress, setHomeAddress] = useLocalStorage('salesPlanner.homeAddress', 'Bruxelles')
+  const [visitsPerDay, setVisitsPerDay] = useLocalStorage('salesPlanner.visitsPerDay', 7)
+  const [darkMode, setDarkMode] = useLocalStorage('salesPlanner.darkMode', false)
+
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
-  const [darkMode, setDarkMode] = useState(false)
 
-  // Persistent state — auto-saved to localStorage
+  // Persistent per-visit state — auto-saved to localStorage
   const [completedVisitsArr, setCompletedVisitsArr] = useLocalStorage<string[]>('completedVisits', [])
   const [notes, setNotes] = useLocalStorage<Record<string, string>>('visitNotes', {})
   const [voiceNotes, setVoiceNotes] = useLocalStorage<Record<string, string>>('voiceNotes', {})
-  const [visitTimerStates, setVisitTimerStates] = useLocalStorage<Record<string, TimerState>>('visitTimerStates', {})
-  const [visitElapsedTimes, setVisitElapsedTimes] = useLocalStorage<Record<string, number>>('visitElapsedTimes', {})
-  const [visitStartTimes, setVisitStartTimes] = useLocalStorage<Record<string, number>>('visitStartTimes', {})
-  const [visitPausedTimes, setVisitPausedTimes] = useLocalStorage<Record<string, number>>('visitPausedTimes', {})
 
   // Expose completedVisits as a Set for efficient .has() checks
   const completedVisits = useMemo(() => new Set(completedVisitsArr), [completedVisitsArr])
@@ -37,8 +55,27 @@ export function useSalesPlanner() {
     }
   }, [homeAddress, visitsPerDay])
 
-  // Auto-regenerate plan when settings change
+  // Clear all loaded clients and the plan (also wipes persisted copies).
+  const clearAll = useCallback(() => {
+    setData([])
+    setPlan([])
+    setFilter('all')
+  }, [setData, setPlan])
+
+  // Auto-regenerate plan when routing settings change — but NOT on mount,
+  // so a restored plan (with manual reorder/remove edits) is preserved.
+  const isFirstRun = useRef(true)
   useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false
+      // On restore: only (re)generate if we have clients but no saved plan
+      // (fresh data, migrated legacy state, or a cleared plan).
+      if (data.length > 0 && plan.length === 0) {
+        const homeCoords = getCityCoordinates(homeAddress)
+        if (homeCoords) setPlan(generatePlan(data, homeCoords, visitsPerDay))
+      }
+      return
+    }
     if (data.length > 0) {
       const homeCoords = getCityCoordinates(homeAddress)
       if (homeCoords) {
@@ -64,43 +101,6 @@ export function useSalesPlanner() {
       return Array.from(set)
     })
   }, [setCompletedVisitsArr])
-
-  const updateTimerState = useCallback((visitId: string, state: TimerState, elapsed: number, startTime?: number) => {
-    setVisitTimerStates(prev => ({ ...prev, [visitId]: state }))
-    setVisitElapsedTimes(prev => ({ ...prev, [visitId]: elapsed }))
-
-    if (state === 'running' && startTime) {
-      setVisitStartTimes(prev => ({ ...prev, [visitId]: startTime }))
-      setVisitPausedTimes(prev => {
-        const next = { ...prev }
-        delete next[visitId]
-        return next
-      })
-    } else if (state === 'paused') {
-      setVisitPausedTimes(prev => ({ ...prev, [visitId]: elapsed }))
-    } else if (state === 'idle') {
-      // Keep elapsed time so the user can see how long the visit took
-      setVisitStartTimes(prev => {
-        const next = { ...prev }
-        delete next[visitId]
-        return next
-      })
-      setVisitPausedTimes(prev => {
-        const next = { ...prev }
-        delete next[visitId]
-        return next
-      })
-    }
-  }, [setVisitTimerStates, setVisitElapsedTimes, setVisitStartTimes, setVisitPausedTimes])
-
-  const startVisit = useCallback((visitId: string) => {
-    updateTimerState(visitId, 'running', 0, Date.now())
-  }, [updateTimerState])
-
-  const endVisit = useCallback((visitId: string) => {
-    const elapsed = visitElapsedTimes[visitId] || 0
-    updateTimerState(visitId, 'idle', elapsed)
-  }, [visitElapsedTimes, updateTimerState])
 
   const updateNote = useCallback((visitId: string, note: string) => {
     setNotes(prev => ({ ...prev, [visitId]: note }))
@@ -178,6 +178,33 @@ export function useSalesPlanner() {
     })
   }, [])
 
+  const removeVisit = useCallback((date: string, visitId: string) => {
+    setPlan(prev =>
+      prev.map(day =>
+        day.date === date
+          ? { ...day, visits: day.visits.filter(v => v.id !== visitId) }
+          : day
+      )
+    )
+  }, [])
+
+  // Reorder a visit within the same day by dropping it onto another visit's slot.
+  const reorderVisit = useCallback((date: string, draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return
+    setPlan(prev =>
+      prev.map(day => {
+        if (day.date !== date) return day
+        const visits = [...day.visits]
+        const from = visits.findIndex(v => v.id === draggedId)
+        const to = visits.findIndex(v => v.id === targetId)
+        if (from === -1 || to === -1) return day
+        const [moved] = visits.splice(from, 1)
+        visits.splice(to, 0, moved)
+        return { ...day, visits }
+      })
+    )
+  }, [])
+
   const updateVisit = useCallback((date: string, updatedVisit: VisitDay) => {
     setPlan(prev =>
       prev.map(day => {
@@ -203,18 +230,12 @@ export function useSalesPlanner() {
     voiceNotes,
     showSettings,
     darkMode,
-    visitTimerStates,
-    visitElapsedTimes,
-    visitStartTimes,
-    visitPausedTimes,
     loadClients,
+    clearAll,
     regeneratePlan,
     toggleComplete,
     updateNote,
     saveVoiceNote,
-    updateTimerState,
-    startVisit,
-    endVisit,
     setFilter,
     setHomeAddress,
     setVisitsPerDay,
@@ -223,6 +244,8 @@ export function useSalesPlanner() {
     getFilteredPlan,
     getTotalMetrics,
     moveVisit,
+    removeVisit,
+    reorderVisit,
     updateVisit,
   }
 }

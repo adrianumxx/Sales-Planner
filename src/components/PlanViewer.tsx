@@ -5,23 +5,15 @@ import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
 import { formatDateLabel } from '../utils/date'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
-import { VisitTimer } from './VisitTimer'
-
-type TimerState = 'idle' | 'running' | 'paused'
 
 interface PlanViewerProps {
   plan: DailyPlan[]
   completedVisits: Set<string>
   notes: Record<string, string>
   voiceNotes?: Record<string, string>   // base64 data URLs
-  visitTimerStates?: Record<string, TimerState>
-  visitElapsedTimes?: Record<string, number>
-  visitStartTimes?: Record<string, number>
-  visitPausedTimes?: Record<string, number>
   onToggleComplete: (visitId: string) => void
   onUpdateNote: (visitId: string, note: string) => void
   onSaveVoiceNote?: (visitId: string, audioData: Blob) => void
-  onUpdateTimerState?: (visitId: string, state: TimerState, elapsed: number, startTime?: number) => void
 }
 
 export function PlanViewer({
@@ -29,17 +21,11 @@ export function PlanViewer({
   completedVisits,
   notes,
   voiceNotes = {},
-  visitTimerStates = {},
-  visitElapsedTimes = {},
-  visitStartTimes = {},
-  visitPausedTimes = {},
   onToggleComplete,
   onUpdateNote,
   onSaveVoiceNote,
-  onUpdateTimerState,
 }: PlanViewerProps) {
   const handleSaveVoiceNote = onSaveVoiceNote ?? (() => {})
-  const handleUpdateTimerState = onUpdateTimerState ?? (() => {})
 
   if (plan.length === 0) {
     return (
@@ -127,16 +113,9 @@ export function PlanViewer({
                     noteText={notes[visit.id] || ''}
                     hasVoiceNote={!!voiceNotes[visit.id]}
                     voiceNoteUrl={voiceNotes[visit.id]}
-                    timerState={visitTimerStates[visit.id] || 'idle'}
-                    timerElapsed={visitElapsedTimes[visit.id] || 0}
-                    timerStartTime={visitStartTimes[visit.id]}
-                    timerPausedTime={visitPausedTimes[visit.id] || 0}
                     onToggleComplete={() => onToggleComplete(visit.id)}
                     onUpdateNote={(note) => onUpdateNote(visit.id, note)}
                     onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
-                    onUpdateTimerState={(state, elapsed, startTime) =>
-                      handleUpdateTimerState(visit.id, state, elapsed, startTime)
-                    }
                   />
                 ))}
               </AnimatePresence>
@@ -154,28 +133,18 @@ function VisitRow({
   noteText,
   hasVoiceNote,
   voiceNoteUrl,
-  timerState,
-  timerElapsed,
-  timerStartTime,
-  timerPausedTime,
   onToggleComplete,
   onUpdateNote,
   onSaveVoiceNote,
-  onUpdateTimerState,
 }: {
   visit: VisitDay
   completed: boolean
   noteText: string
   hasVoiceNote: boolean
   voiceNoteUrl?: string
-  timerState: TimerState
-  timerElapsed: number
-  timerStartTime?: number
-  timerPausedTime: number
   onToggleComplete: () => void
   onUpdateNote: (note: string) => void
   onSaveVoiceNote: (audio: Blob) => void
-  onUpdateTimerState: (state: TimerState, elapsed: number, startTime?: number) => void
 }) {
   const [editingNote, setEditingNote] = useState(false)
   const [noteValue, setNoteValue] = useState(noteText)
@@ -253,16 +222,6 @@ function VisitRow({
               </h4>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <VisitTimer
-                visitId={visit.id}
-                onStateChange={(_, state, elapsed, startTime) =>
-                  onUpdateTimerState(state, elapsed, startTime)
-                }
-                state={timerState}
-                elapsed={timerElapsed}
-                startTime={timerStartTime}
-                pausedTime={timerPausedTime}
-              />
               <motion.span
                 whileHover={{ scale: 1.05 }}
                 className={`text-xs font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg whitespace-nowrap ${

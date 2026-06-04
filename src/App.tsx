@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { Menu, Download, FileDown, FileText, Calendar, LogOut } from 'lucide-react'
+import { Menu, Calendar, LogOut } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileUpload } from './components/FileUpload'
 import { Dashboard } from './components/Dashboard'
@@ -11,9 +11,9 @@ import { FileManager } from './components/FileManager'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { EditVisitModal } from './components/EditVisitModal'
 import { CommandBar } from './components/CommandBar'
+import { ExportMenu } from './components/ExportMenu'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
 import { useAuth } from './hooks/useAuth'
-import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar, exportToPDF } from './utils/export'
 import { useFileParser } from './hooks/useFileParser'
 import { getCityCoordinates } from './utils/geo'
@@ -93,7 +93,6 @@ interface AppContentProps {
 }
 
 function AppContent({ user, onLogout }: AppContentProps) {
-  const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const planner = useSalesPlanner()
@@ -106,32 +105,8 @@ function AppContent({ user, onLogout }: AppContentProps) {
     localStorage.removeItem('visitsByDate')
   }, [])
 
-  // Load saved state on mount
-  useEffect(() => {
-    if (savedState) {
-      if (savedState.data?.length > 0) {
-        // Set parameters FIRST so loadClients uses correct values
-        planner.setHomeAddress(savedState.homeAddress || 'Bruxelles')
-        planner.setVisitsPerDay(savedState.visitsPerDay || 7)
-        planner.setFilter(savedState.filter || 'all')
-        planner.setDarkMode(savedState.darkMode || false)
-        // Then load clients with correct parameters
-        planner.loadClients(savedState.data)
-      }
-    }
-  }, [])
-
-  // Save core planning state to localStorage on changes
-  // (notes, completedVisits, voiceNotes auto-persist in their own keys)
-  useEffect(() => {
-    setSavedState({
-      data: planner.data,
-      filter: planner.filter,
-      homeAddress: planner.homeAddress,
-      visitsPerDay: planner.visitsPerDay,
-      darkMode: planner.darkMode,
-    })
-  }, [planner.data, planner.filter, planner.homeAddress, planner.visitsPerDay, planner.darkMode, setSavedState])
+  // Persistence of data, plan (incl. manual edits) and settings is owned by
+  // useSalesPlanner via per-key localStorage — no save/restore wiring needed here.
 
   // Apply dark mode to document
   useEffect(() => {
@@ -161,16 +136,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
   }, [planner.homeAddress])
 
   const handleRemoveVisit = (date: string, visitId: string) => {
-    const updated = planner.plan.map(day => {
-      if (day.date === date) {
-        return {
-          ...day,
-          visits: day.visits.filter(v => v.id !== visitId),
-        }
-      }
-      return day
-    })
-    // Update plan (would need to expose setPlan in useSalesPlanner)
+    planner.removeVisit(date, visitId)
   }
 
   const handleExportCSV = () => {
@@ -210,60 +176,16 @@ function AppContent({ user, onLogout }: AppContentProps) {
                   }
                 }}
                 onClear={() => {
-                  planner.data.length = 0
-                  window.location.reload()
+                  planner.clearAll()
                 }}
               />
 
               {planner.plan.length > 0 && (
-                <>
-                  {/* Mobile: icon-only buttons */}
-                  <button
-                    onClick={handleExportPDF}
-                    className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
-                    title="Export PDF"
-                  >
-                    <FileText className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={handleExportCSV}
-                    className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
-                    title="Export CSV"
-                  >
-                    <FileDown className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={handleExportICal}
-                    className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
-                    title="Export iCal"
-                  >
-                    <Download className="h-4 w-4" />
-                  </button>
-                  {/* Desktop: text + icon buttons */}
-                  <div className="hidden sm:flex items-center gap-2">
-                    <button
-                      onClick={handleExportPDF}
-                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
-                    >
-                      <FileText className="h-4 w-4" />
-                      PDF
-                    </button>
-                    <button
-                      onClick={handleExportCSV}
-                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
-                    >
-                      <FileDown className="h-4 w-4" />
-                      CSV
-                    </button>
-                    <button
-                      onClick={handleExportICal}
-                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
-                    >
-                      <Download className="h-4 w-4" />
-                      iCal
-                    </button>
-                  </div>
-                </>
+                <ExportMenu
+                  onExportPDF={handleExportPDF}
+                  onExportCSV={handleExportCSV}
+                  onExportICal={handleExportICal}
+                />
               )}
 
               <button
@@ -387,14 +309,9 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     completedVisits={planner.completedVisits}
                     notes={planner.notes}
                     voiceNotes={planner.voiceNotes}
-                    visitTimerStates={planner.visitTimerStates}
-                    visitElapsedTimes={planner.visitElapsedTimes}
-                    visitStartTimes={planner.visitStartTimes}
-                    visitPausedTimes={planner.visitPausedTimes}
                     onToggleComplete={planner.toggleComplete}
                     onUpdateNote={planner.updateNote}
                     onSaveVoiceNote={planner.saveVoiceNote}
-                    onUpdateTimerState={planner.updateTimerState}
                   />
                 </motion.div>
               )}
@@ -416,6 +333,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onMoveVisit={(visit, fromDate, toDate) => {
                       planner.moveVisit(fromDate, toDate, visit.id)
                     }}
+                    onReorderVisit={planner.reorderVisit}
                     onUpdateVisit={(visit) => {
                       if (editingVisit) {
                         planner.updateVisit(editingVisit.date, visit)
