@@ -6,6 +6,7 @@ export interface Client {
   urgency: 'urgent' | 'attention' | 'ok';
   quality?: number;
   customerDetails?: string;
+  address?: string;
   daysSinceLastVisit?: number;
 }
 
@@ -13,12 +14,14 @@ export interface VisitDay {
   id: string;
   clientName: string;
   town: string;
+  address?: string;
   distance: number;
   urgency: 'urgent' | 'attention' | 'ok';
   timeSlot: string;
   completed: boolean;
   notes: string;
   quality: number;
+  lastVisitDays?: number;
 }
 
 export interface DailyPlan {

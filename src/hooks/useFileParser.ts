@@ -32,12 +32,25 @@ export function useFileParser() {
       const header = dataRows[0].map(h => String(h || '').trim().toLowerCase())
       const normalizedHeader = header.map(normalizeColumnName)
 
-      // Map flexible column names
-      const clientNameIdx = normalizedHeader.findIndex(h => h.includes('client') || h.includes('name') || h.includes('customer') || h.includes('account'))
-      const townIdx = normalizedHeader.findIndex(h => h.includes('town') || h.includes('city') || h.includes('location') || h.includes('area'))
-      const daysIdx = normalizedHeader.findIndex(h =>
-        (h.includes('days') || h.includes('last') || h.includes('visit')) &&
-        (h.includes('days') || h.includes('visit'))
+      // Client / customer name column
+      const clientNameIdx = normalizedHeader.findIndex(h =>
+        h.includes('customerdetails') || h.includes('client') || h.includes('customer') ||
+        h.includes('account') || h.includes('name')
+      )
+      const townIdx = normalizedHeader.findIndex(h =>
+        h.includes('town') || h.includes('city') || h.includes('location') || h.includes('area')
+      )
+
+      // CRITICAL: prefer "Days Since Last Visit" over "LastVisitFQ".
+      // The recency-in-days value is what drives priority; a date/quarter
+      // column like "LastVisitFQ" must never be mistaken for it.
+      let daysIdx = normalizedHeader.findIndex(h => h.includes('dayssince'))
+      if (daysIdx === -1) daysIdx = normalizedHeader.findIndex(h => h.includes('days') && h.includes('since'))
+      if (daysIdx === -1) daysIdx = normalizedHeader.findIndex(h => h.includes('days'))
+      if (daysIdx === -1) daysIdx = normalizedHeader.findIndex(h => h.includes('since') && h.includes('visit'))
+
+      const qualityIdx = normalizedHeader.findIndex(h =>
+        h.includes('quality') || h.includes('tier') || h.includes('segment') || h.includes('grade')
       )
 
       if (clientNameIdx === -1 || townIdx === -1 || daysIdx === -1) {
@@ -52,17 +65,34 @@ export function useFileParser() {
         const row = dataRows[i]
         if (!row || row.length <= Math.max(clientNameIdx, townIdx, daysIdx)) continue
 
-        const clientName = String(row[clientNameIdx] || '').trim()
+        const rawDetails = String(row[clientNameIdx] || '').trim()
         const town = String(row[townIdx] || '').trim()
         const daysStr = String(row[daysIdx] || '0').trim()
         const lastVisitDays = Math.round(parseFloat(daysStr)) || 0
+
+        // CustomerDetails looks like: "POP CAFE | GRAND ROUTE 25, , 7740, WARCOING"
+        // → name = "POP CAFE", address = "GRAND ROUTE 25, 7740, WARCOING"
+        const [namePart, ...addrParts] = rawDetails.split('|')
+        const clientName = (namePart || '').trim() || rawDetails
+        const address = addrParts.join('|')
+          .replace(/\s*,\s*(?:,\s*)+/g, ', ') // collapse ", ," empty fields
+          .replace(/\s+/g, ' ')
+          .trim()
+
+        // Quality tier → numeric weight (Core = top)
+        const qualityRaw = qualityIdx !== -1 ? String(row[qualityIdx] || '').trim().toLowerCase() : ''
+        const quality = qualityRaw === 'core' ? 9 : qualityRaw === 'develop' ? 6 : 7
 
         if (clientName && town && lastVisitDays > 0) {
           clients.push({
             id: Math.random().toString(36).substr(2, 9),
             clientName,
             town,
+            address: address || undefined,
+            customerDetails: rawDetails,
             lastVisitDays,
+            daysSinceLastVisit: lastVisitDays,
+            quality,
             urgency: 'ok',
           })
         }
@@ -93,28 +123,17 @@ export function useFileParser() {
             let rows: (string | number | boolean | null)[][] = []
 
             if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-              // Parse Excel file
+              // Parse Excel file as raw rows (header:1) → array of arrays.
+              // This avoids key collisions from metadata rows and keeps the
+              // real header intact for our flexible column detection.
               const workbook = XLSX.read(data, { type: 'array' })
               const sheetName = workbook.SheetNames[0]
               const sheet = workbook.Sheets[sheetName]
-              const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 0, defval: '' })
-
-              // Convert to array format with proper types
-              const rowsData = jsonData as Record<string, unknown>[]
-              if (rowsData.length > 0) {
-                const headers = Object.keys(rowsData[0])
-                rows = [
-                  headers as (string | number | boolean | null)[],
-                  ...rowsData.map(row =>
-                    headers.map(h => {
-                      const val = row[h]
-                      if (val === null || val === undefined) return null
-                      if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val
-                      return String(val)
-                    })
-                  )
-                ]
-              }
+              rows = XLSX.utils.sheet_to_json(sheet, {
+                header: 1,
+                defval: '',
+                raw: true,
+              }) as (string | number | boolean | null)[][]
             } else {
               // Parse CSV file
               const text = typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer)
