@@ -96,7 +96,7 @@ interface AppContentProps {
 function AppContent({ user, onLogout }: AppContentProps) {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const planner = useSalesPlanner()
+  const planner = useSalesPlanner(user.id)
   const { parseFile } = useFileParser()
   const [editingVisit, setEditingVisit] = useState<{ visit: VisitDay; date: string } | null>(null)
   const [commandResult, setCommandResult] = useState<CommandResult | null>(null)
