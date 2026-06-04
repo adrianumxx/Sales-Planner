@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { Client, DailyPlan, CityCoord } from '../types'
+import type { Client, DailyPlan, CityCoord, VisitDay } from '../types'
 import { generatePlan } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
 import { useLocalStorage } from './useLocalStorage'
@@ -130,6 +130,56 @@ export function useSalesPlanner() {
     return { totalVisits, totalKm: Math.round(totalKm * 10) / 10, urgentCount, attentionCount }
   }, [plan])
 
+  const moveVisit = useCallback((fromDate: string, toDate: string, visitId: string) => {
+    setPlan(prev => {
+      let visitToMove: VisitDay | null = null
+
+      // Find the visit in the source day
+      for (const day of prev) {
+        if (day.date === fromDate) {
+          const visit = day.visits.find(v => v.id === visitId)
+          if (visit) {
+            visitToMove = visit
+            break
+          }
+        }
+      }
+
+      if (!visitToMove) return prev
+
+      // Remove from source, add to destination
+      return prev.map(day => {
+        if (day.date === fromDate) {
+          return {
+            ...day,
+            visits: day.visits.filter(v => v.id !== visitId)
+          }
+        }
+        if (day.date === toDate) {
+          return {
+            ...day,
+            visits: [...day.visits, visitToMove]
+          }
+        }
+        return day
+      })
+    })
+  }, [])
+
+  const updateVisit = useCallback((date: string, updatedVisit: VisitDay) => {
+    setPlan(prev =>
+      prev.map(day => {
+        if (day.date === date) {
+          return {
+            ...day,
+            visits: day.visits.map(v => v.id === updatedVisit.id ? updatedVisit : v)
+          }
+        }
+        return day
+      })
+    )
+  }, [])
+
   return {
     data,
     plan,
@@ -158,5 +208,7 @@ export function useSalesPlanner() {
     setDarkMode,
     getFilteredPlan,
     getTotalMetrics,
+    moveVisit,
+    updateVisit,
   }
 }

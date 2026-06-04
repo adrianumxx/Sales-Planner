@@ -94,7 +94,6 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
   const planner = useSalesPlanner()
   const { parseFile } = useFileParser()
   const [editingVisit, setEditingVisit] = useState<{ visit: VisitDay; date: string } | null>(null)
@@ -328,24 +327,11 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onRemoveVisit={handleRemoveVisit}
                     onVisitClick={(visit, date) => setEditingVisit({ visit, date })}
                     onMoveVisit={(visit, fromDate, toDate) => {
-                      // Remove from old date, add to new date
-                      const oldVisits = visitsByDateMap[fromDate] || []
-                      const newVisits = visitsByDateMap[toDate] || []
-
-                      setVisitsByDate({
-                        ...visitsByDate,
-                        [fromDate]: oldVisits.filter(v => v.id !== visit.id),
-                        [toDate]: [...newVisits, visit],
-                      })
+                      planner.moveVisit(fromDate, toDate, visit.id)
                     }}
                     onUpdateVisit={(visit) => {
                       if (editingVisit) {
-                        setVisitsByDate({
-                          ...visitsByDate,
-                          [editingVisit.date]: visitsByDateMap[editingVisit.date]?.map(v =>
-                            v.id === visit.id ? visit : v
-                          ) || [],
-                        })
+                        planner.updateVisit(editingVisit.date, visit)
                       }
                     }}
                   />
@@ -388,12 +374,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
           isOpen={true}
           onClose={() => setEditingVisit(null)}
           onSave={(updatedVisit) => {
-            setVisitsByDate({
-              ...visitsByDate,
-              [editingVisit.date]: visitsByDateMap[editingVisit.date]?.map(v =>
-                v.id === updatedVisit.id ? updatedVisit : v
-              ) || [],
-            })
+            planner.updateVisit(editingVisit.date, updatedVisit)
             setEditingVisit(null)
           }}
         />
