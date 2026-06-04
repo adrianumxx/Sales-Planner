@@ -1,5 +1,5 @@
 import React from 'react'
-import { TrendingUp, MapPin, CheckCircle2, AlertCircle } from 'lucide-react'
+import { MapPin, CheckCircle2, AlertCircle } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface DashboardProps {
@@ -15,8 +15,6 @@ export function Dashboard({
   urgentCount,
   attentionCount,
 }: DashboardProps) {
-  const okCount = totalVisits - urgentCount - attentionCount
-
   const containerVariants = {
     hidden: { opacity: 0 },
     show: {
@@ -66,14 +64,6 @@ export function Dashboard({
       borderColor: 'border-amber-200 dark:border-amber-800',
       textColor: 'text-amber-900 dark:text-amber-100',
     },
-    {
-      label: 'On Track',
-      value: okCount,
-      icon: <TrendingUp className="h-6 w-6" />,
-      gradient: 'from-green-500/20 to-green-600/20 dark:from-green-500/10 dark:to-green-600/10',
-      borderColor: 'border-green-200 dark:border-green-800',
-      textColor: 'text-green-900 dark:text-green-100',
-    },
   ]
 
   return (
@@ -81,7 +71,7 @@ export function Dashboard({
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4"
+      className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
     >
       {kpiCards.map((card, idx) => (
         <motion.div

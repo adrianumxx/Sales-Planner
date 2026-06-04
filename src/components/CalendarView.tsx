@@ -12,6 +12,7 @@ interface CalendarViewProps {
   onRemoveVisit: (date: string, visitId: string) => void
   onVisitClick?: (visit: VisitDay, date: string) => void
   onMoveVisit?: (visit: VisitDay, fromDate: string, toDate: string) => void
+  onReorderVisit?: (date: string, draggedId: string, targetId: string) => void
   onUpdateVisit?: (visit: VisitDay) => void
 }
 
@@ -23,6 +24,7 @@ export function CalendarView({
   onRemoveVisit,
   onVisitClick,
   onMoveVisit,
+  onReorderVisit,
   onUpdateVisit,
 }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -266,8 +268,29 @@ export function CalendarView({
                     draggable
                     onDragStart={() => setDraggedVisit({ visit, fromDate: selectedDate })}
                     onDragEnd={() => setDraggedVisit(null)}
+                    onDragOver={(e) => {
+                      // Allow dropping only when reordering within the same day
+                      if (draggedVisit && draggedVisit.fromDate === selectedDate) {
+                        e.preventDefault()
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (
+                        draggedVisit &&
+                        draggedVisit.fromDate === selectedDate &&
+                        onReorderVisit
+                      ) {
+                        onReorderVisit(selectedDate, draggedVisit.visit.id, visit.id)
+                      }
+                      setDraggedVisit(null)
+                    }}
                     className={`flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-lg text-sm cursor-grab active:cursor-grabbing transition-all ${
-                      draggedVisit?.visit.id === visit.id ? 'opacity-50' : ''
+                      draggedVisit?.visit.id === visit.id
+                        ? 'opacity-50'
+                        : draggedVisit?.fromDate === selectedDate
+                          ? 'ring-1 ring-dashed ring-indigo-300 dark:ring-indigo-600'
+                          : ''
                     }`}
                   >
                     <div className="flex items-center gap-2 flex-1">
