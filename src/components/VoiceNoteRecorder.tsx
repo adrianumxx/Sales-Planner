@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Mic, Square, Play, Pause, Trash2, Save } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Save, RotateCcw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface VoiceNoteRecorderProps {
@@ -7,6 +7,31 @@ interface VoiceNoteRecorderProps {
   onSaveVoiceNote: (visitId: string, audioData: Blob) => void
   hasVoiceNote: boolean
   voiceNoteUrl?: string // base64 data URL for saved notes
+}
+
+// Cap a single note so it stays playable and storage-friendly.
+const MAX_SECONDS = 120
+
+/** Pick the best-quality recording container/codec the browser supports. */
+function pickMimeType(): string {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/ogg;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+  ]
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+    for (const t of candidates) {
+      if (MediaRecorder.isTypeSupported(t)) return t
+    }
+  }
+  return ''
+}
+
+function formatTime(s: number): string {
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
 }
 
 export function VoiceNoteRecorder({
@@ -19,51 +44,88 @@ export function VoiceNoteRecorder({
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [elapsed, setElapsed] = useState(0)        // seconds while recording
+  const [clipDuration, setClipDuration] = useState(0) // length of the recorded clip
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const elapsedRef = useRef(0) // latest elapsed, for stopRecording without stale closure
 
-  // Revoke object URLs on cleanup
+  useEffect(() => { elapsedRef.current = elapsed }, [elapsed])
+
+  const stopTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+  }
+
+  // Cleanup on unmount: stop timer, tracks, and revoke object URL.
   useEffect(() => {
     return () => {
+      stopTimer()
+      streamRef.current?.getTracks().forEach(t => t.stop())
       if (recordedUrl) URL.revokeObjectURL(recordedUrl)
     }
   }, [recordedUrl])
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      })
       streamRef.current = stream
 
-      const mediaRecorder = new MediaRecorder(stream)
+      const mimeType = pickMimeType()
+      const mediaRecorder = new MediaRecorder(stream, {
+        ...(mimeType ? { mimeType } : {}),
+        audioBitsPerSecond: 128000,
+      })
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
 
       mediaRecorder.ondataavailable = (event) => {
-        chunksRef.current.push(event.data)
+        if (event.data.size > 0) chunksRef.current.push(event.data)
       }
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        const type = mediaRecorder.mimeType || mimeType || 'audio/webm'
+        const audioBlob = new Blob(chunksRef.current, { type })
         const url = URL.createObjectURL(audioBlob)
         setRecordedBlob(audioBlob)
         setRecordedUrl(url)
         stream.getTracks().forEach(track => track.stop())
+        streamRef.current = null
       }
 
       mediaRecorder.start()
       setIsRecording(true)
+      setElapsed(0)
+      stopTimer()
+      timerRef.current = setInterval(() => {
+        setElapsed(prev => {
+          const next = prev + 1
+          if (next >= MAX_SECONDS) stopRecording()
+          return next
+        })
+      }, 1000)
     } catch {
-      alert('Microphone permission denied. Enable it in your browser.')
+      alert('Microphone permission denied. Enable it in your browser settings.')
     }
   }
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
-      setIsRecording(false)
     }
+    stopTimer()
+    setClipDuration(prev => (elapsedRef.current > 0 ? elapsedRef.current : prev))
+    setIsRecording(false)
   }
 
   const togglePlay = () => {
@@ -72,8 +134,7 @@ export function VoiceNoteRecorder({
       audioRef.current.pause()
       setIsPlaying(false)
     } else {
-      audioRef.current.play()
-      setIsPlaying(true)
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false))
     }
   }
 
@@ -96,6 +157,12 @@ export function VoiceNoteRecorder({
       setRecordedUrl(null)
     }
     setIsPlaying(false)
+    setClipDuration(0)
+  }
+
+  const reRecord = () => {
+    discardRecording()
+    startRecording()
   }
 
   const deleteExistingNote = () => {
@@ -104,14 +171,6 @@ export function VoiceNoteRecorder({
 
   // Audio source: freshly recorded takes priority over saved
   const activeSrc = recordedUrl || voiceNoteUrl
-
-  const recordingVariants = {
-    initial: { scale: 1 },
-    recording: {
-      scale: [1, 1.15, 1],
-      transition: { duration: 0.8, repeat: Infinity },
-    },
-  }
 
   return (
     <div className="space-y-2">
@@ -133,21 +192,36 @@ export function VoiceNoteRecorder({
           </motion.button>
         )}
 
-        {/* Recording in progress */}
+        {/* Recording in progress — live timer + pulsing indicator */}
         {isRecording && (
-          <motion.button
-            key="stop-btn"
+          <motion.div
+            key="recording"
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
-            variants={recordingVariants}
-            whileTap={{ scale: 0.95 }}
-            onClick={stopRecording}
-            className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg animate-pulse"
+            className="flex items-center gap-2 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800"
           >
-            <Square className="h-3.5 w-3.5" />
-            Recording…
-          </motion.button>
+            <motion.span
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1, repeat: Infinity }}
+              className="h-2.5 w-2.5 rounded-full bg-red-500 flex-shrink-0"
+            />
+            <span className="text-xs font-semibold text-red-600 dark:text-red-400 tabular-nums">
+              {formatTime(elapsed)}
+            </span>
+            <span className="text-[10px] text-red-400 dark:text-red-500 flex-1">
+              / {formatTime(MAX_SECONDS)} max
+            </span>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={stopRecording}
+              className="flex items-center gap-1 px-2.5 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors"
+            >
+              <Square className="h-3 w-3" />
+              Stop
+            </motion.button>
+          </motion.div>
         )}
 
         {/* Freshly recorded — preview & save */}
@@ -160,11 +234,7 @@ export function VoiceNoteRecorder({
             className="flex items-center gap-2 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-lg border border-purple-200 dark:border-purple-800"
           >
             {activeSrc && (
-              <audio
-                ref={audioRef}
-                src={activeSrc}
-                onEnded={() => setIsPlaying(false)}
-              />
+              <audio ref={audioRef} src={activeSrc} onEnded={() => setIsPlaying(false)} />
             )}
             <motion.button
               whileHover={{ scale: 1.1 }}
@@ -175,10 +245,20 @@ export function VoiceNoteRecorder({
             >
               {isPlaying
                 ? <Pause className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                : <Play className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-              }
+                : <Play className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />}
             </motion.button>
-            <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">🎙️ Ready</span>
+            <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">
+              🎙️ Ready{clipDuration > 0 ? ` · ${formatTime(clipDuration)}` : ''}
+            </span>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={reRecord}
+              className="p-1.5 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors"
+              title="Re-record"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+            </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -200,7 +280,7 @@ export function VoiceNoteRecorder({
         )}
 
         {/* Saved voice note — play & delete */}
-        {hasVoiceNote && !recordedBlob && (
+        {hasVoiceNote && !recordedBlob && !isRecording && (
           <motion.div
             key="saved-controls"
             initial={{ opacity: 0, y: -6 }}
@@ -209,11 +289,7 @@ export function VoiceNoteRecorder({
             className="flex items-center gap-2 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-lg border border-purple-200 dark:border-purple-800"
           >
             {voiceNoteUrl && (
-              <audio
-                ref={audioRef}
-                src={voiceNoteUrl}
-                onEnded={() => setIsPlaying(false)}
-              />
+              <audio ref={audioRef} src={voiceNoteUrl} onEnded={() => setIsPlaying(false)} />
             )}
             <motion.button
               whileHover={{ scale: 1.1 }}
@@ -224,8 +300,7 @@ export function VoiceNoteRecorder({
             >
               {isPlaying
                 ? <Pause className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                : <Play className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-              }
+                : <Play className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />}
             </motion.button>
             <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">🎙️ Voice note</span>
             <motion.button
