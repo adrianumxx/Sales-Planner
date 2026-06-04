@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { Menu, Download, FileDown, Calendar, LogOut } from 'lucide-react'
+import { Menu, Download, FileDown, FileText, Calendar, LogOut } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileUpload } from './components/FileUpload'
 import { Dashboard } from './components/Dashboard'
@@ -14,7 +14,7 @@ import { CommandBar } from './components/CommandBar'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
 import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
-import { exportToCSV, exportToICalendar } from './utils/export'
+import { exportToCSV, exportToICalendar, exportToPDF } from './utils/export'
 import { useFileParser } from './hooks/useFileParser'
 import { getCityCoordinates } from './utils/geo'
 import type { VisitDay, DailyPlan } from './types'
@@ -181,6 +181,10 @@ function AppContent({ user, onLogout }: AppContentProps) {
     exportToICalendar(planner.plan)
   }
 
+  const handleExportPDF = () => {
+    exportToPDF(commandResult ? commandResult.days : filteredPlan)
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
@@ -215,6 +219,13 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 <>
                   {/* Mobile: icon-only buttons */}
                   <button
+                    onClick={handleExportPDF}
+                    className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    title="Export PDF"
+                  >
+                    <FileText className="h-4 w-4" />
+                  </button>
+                  <button
                     onClick={handleExportCSV}
                     className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
                     title="Export CSV"
@@ -230,6 +241,13 @@ function AppContent({ user, onLogout }: AppContentProps) {
                   </button>
                   {/* Desktop: text + icon buttons */}
                   <div className="hidden sm:flex items-center gap-2">
+                    <button
+                      onClick={handleExportPDF}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
+                    >
+                      <FileText className="h-4 w-4" />
+                      PDF
+                    </button>
                     <button
                       onClick={handleExportCSV}
                       className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
