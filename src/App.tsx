@@ -17,6 +17,7 @@ import { useAuth } from './hooks/useAuth'
 import { exportToCSV, exportToICalendar, exportToPDF } from './utils/export'
 import { useFileParser } from './hooks/useFileParser'
 import { getCityCoordinates } from './utils/geo'
+import { formatDateLabel } from './utils/date'
 import type { VisitDay, DailyPlan } from './types'
 import type { CommandResult } from './components/CommandBar'
 
@@ -221,6 +222,12 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 totalKm={metrics.totalKm}
                 urgentCount={metrics.urgentCount}
                 attentionCount={metrics.attentionCount}
+                planDays={planner.plan.length}
+                dateRangeLabel={
+                  planner.plan.length > 0
+                    ? `${formatDateLabel(planner.plan[0].date, { month: 'short', day: 'numeric' })} – ${formatDateLabel(planner.plan[planner.plan.length - 1].date, { month: 'short', day: 'numeric' })}`
+                    : ''
+                }
               />
 
               {/* Command Bar */}
@@ -328,6 +335,9 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onDateSelect={setSelectedDate}
                     selectedDate={selectedDate}
                     visitsByDate={visitsByDateMap}
+                    visitsPerDay={planner.visitsPerDay}
+                    adminDays={planner.adminDays}
+                    onToggleAdminDay={planner.toggleAdminDay}
                     onRemoveVisit={handleRemoveVisit}
                     onVisitClick={(visit, date) => setEditingVisit({ visit, date })}
                     onMoveVisit={(visit, fromDate, toDate) => {
