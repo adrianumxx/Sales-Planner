@@ -91,6 +91,25 @@ export function useAuth() {
     []
   )
 
+  const checkEmailExists = useCallback(async (email: string): Promise<boolean> => {
+    try {
+      if (!email.endsWith('@bacardi.com')) {
+        return false
+      }
+
+      const { data, error } = await supabase.auth.admin.listUsers()
+      if (error) {
+        // Se admin API non disponibile, assume non esiste (fallback)
+        return false
+      }
+
+      return data?.users?.some(u => u.email === email) || false
+    } catch (err) {
+      console.error('Check email error:', err)
+      return false
+    }
+  }, [])
+
   const signup = useCallback(
     async (email: string, password: string) => {
       try {
@@ -104,10 +123,23 @@ export function useAuth() {
         const { data, error: signupError } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: window.location.origin,
+            data: {
+              autoConfirm: true,
+            },
+          },
         })
 
         if (signupError) throw signupError
-        if (data.user) {
+        if (data.session?.user) {
+          setUser({
+            id: data.session.user.id,
+            email: data.session.user.email || '',
+            user_metadata: data.session.user.user_metadata,
+          })
+          setSession(data.session)
+        } else if (data.user) {
           setUser({
             id: data.user.id,
             email: data.user.email || '',
@@ -147,6 +179,7 @@ export function useAuth() {
     login,
     signup,
     logout,
+    checkEmailExists,
     isAuthenticated: !!user,
   }
 }
