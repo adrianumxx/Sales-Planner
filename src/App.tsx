@@ -16,6 +16,7 @@ import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar } from './utils/export'
 import { useFileParser } from './hooks/useFileParser'
+import { getCityCoordinates } from './utils/geo'
 import type { VisitDay, DailyPlan } from './types'
 import type { CommandResult } from './components/CommandBar'
 
@@ -153,6 +154,12 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const metrics = planner.getTotalMetrics()
   const filteredPlan = planner.getFilteredPlan()
 
+  // Home coordinates for area-coverage routing (default Bruxelles)
+  const homeCoords = useMemo(() => {
+    const c = getCityCoordinates(planner.homeAddress) || getCityCoordinates('Bruxelles')
+    return c ? { lat: c.lat, lon: c.lon } : { lat: 50.8503, lon: 4.3517 }
+  }, [planner.homeAddress])
+
   const handleRemoveVisit = (date: string, visitId: string) => {
     const updated = planner.plan.map(day => {
       if (day.date === date) {
@@ -184,7 +191,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
             <div>
               <h1 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
               <p className="hidden sm:block text-sm text-slate-500 dark:text-slate-400 mt-1">
-                {user.email} • 90-day sales visit planner
+                {user.email} • copertura intelligente per zona e percorsi ottimizzati
               </p>
             </div>
 
@@ -279,7 +286,13 @@ function AppContent({ user, onLogout }: AppContentProps) {
               {/* Command Bar */}
               {viewMode === 'list' && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-                  <CommandBar plan={planner.plan} onResult={setCommandResult} />
+                  <CommandBar
+                    plan={planner.plan}
+                    clients={planner.data}
+                    homeCoords={homeCoords}
+                    visitsPerDay={planner.visitsPerDay}
+                    onResult={setCommandResult}
+                  />
                 </motion.div>
               )}
 
@@ -291,13 +304,13 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm border ${
-                      commandResult.type === 'reroute'
+                      commandResult.type === 'area'
                         ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
                         : 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
                     }`}
                   >
                     <span className="font-semibold">
-                      {commandResult.type === 'reroute' ? '📍' : '✨'} {commandResult.totalVisits} visite
+                      {commandResult.type === 'area' ? '📍' : '✨'} {commandResult.totalVisits} visite
                     </span>
                     <span className="opacity-70">
                       {commandResult.description ?? `per "${commandResult.label}"`}

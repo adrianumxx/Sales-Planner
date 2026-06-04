@@ -1,25 +1,26 @@
 import React, { useState, useRef, useCallback } from 'react'
-import { Sparkles, X, ChevronRight, Navigation } from 'lucide-react'
+import { Sparkles, X, MapPin } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { DailyPlan } from '../types'
-import { getCityCoordinates } from '../utils/geo'
-import { rerouteDayFromCity } from '../utils/planning'
+import type { DailyPlan, VisitDay, Client } from '../types'
+import { coordsForCity } from '../utils/geo'
+import { planAreaCoverage } from '../utils/planning'
 import { toDateStr, parseLocalDate } from '../utils/date'
 
 export interface CommandResult {
   label: string
-  description?: string   // shown in banner instead of raw label
+  description?: string
   days: DailyPlan[]
   totalVisits: number
-  type?: 'filter' | 'reroute'
+  type?: 'filter' | 'area'
 }
 
 interface CommandBarProps {
   plan: DailyPlan[]
+  clients: Client[]
+  homeCoords: { lat: number; lon: number }
+  visitsPerDay: number
   onResult: (result: CommandResult | null) => void
 }
-
-// ── Constants ──────────────────────────────────────────────────────────────────
 
 const TODAY    = toDateStr(new Date())
 const TOMORROW = toDateStr(new Date(Date.now() + 86400000))
@@ -34,49 +35,93 @@ const DAY_NAMES: Record<string, number> = {
   sabato: 6, samedi: 6, saturday: 6, sat: 6,
 }
 
-// ── Text normalisation ─────────────────────────────────────────────────────────
+const RADII = [10, 20, 30, 50]
 
 function normalize(s: string): string {
-  return s.toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9\s]/g, '')
-    .trim()
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9\s]/g, '').trim()
 }
 
-// ── Re-route intent detection ──────────────────────────────────────────────────
-// Detects patterns like "sono su/a/in [city]", "parto da [city]", "starting from [city]"
+const STOPWORDS = new Set([
+  'le', 'la', 'les', 'di', 'da', 'a', 'su', 'per', 'in', 'con', 'e', 'el',
+  'delle', 'della', 'del', 'dei', 'gli', 'il', 'lo', 'un', 'una', 'sur',
+  'visite', 'visita', 'visit', 'fammi', 'mostra', 'show', 'dammi', 'give',
+  'tutte', 'tutti', 'all', 'quelli', 'quelle', 'questa', 'questo',
+  'urgenti', 'urgent', 'priorita', 'attenzione', 'attention',
+  'oggi', 'domani', 'settimana', 'today', 'tomorrow', 'week', 'semaine',
+  'cliente', 'client', 'clienti', 'sono', 'parto', 'partendo', 'plan',
+  'ottimizza', 'route', 'pianifica', 'percorso', 'zona', 'zone', 'dintorni',
+  'intorno', 'around', 'vicino', 'km', ...Object.keys(DAY_NAMES),
+])
 
-function extractRerouteCity(q: string): string | null {
-  const patterns = [
-    /sono (?:su|a|in) ([a-z]+)/,
-    /parto (?:da|di) ([a-z]+)/,
-    /partendo (?:da|di) ([a-z]+)/,
-    /starting from ([a-z]+)/,
-    /je suis a ([a-z]+)/,
-    /je pars de ([a-z]+)/,
-  ]
-  for (const pat of patterns) {
-    const m = q.match(pat)
-    if (m) return m[1]
+/** Find the first Belgian city named in the query (prefers two-word names). */
+function findCity(words: string[]): { name: string; coord: { lat: number; lon: number } } | null {
+  // Two-word names first (e.g. "la louviere")
+  for (let i = 0; i < words.length - 1; i++) {
+    const bg = `${words[i]} ${words[i + 1]}`
+    const c = coordsForCity(bg)
+    if (c) return { name: bg, coord: c }
+  }
+  for (const w of words) {
+    if (w.length < 3 || STOPWORDS.has(w)) continue
+    const c = coordsForCity(w)
+    if (c) return { name: w, coord: c }
   }
   return null
 }
 
-// ── Main query parser ──────────────────────────────────────────────────────────
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, ch => ch.toUpperCase())
+}
 
-function parseQuery(raw: string, plan: DailyPlan[]): CommandResult | null {
+function parseQuery(
+  raw: string,
+  plan: DailyPlan[],
+  clients: Client[],
+  homeCoords: { lat: number; lon: number },
+  visitsPerDay: number,
+  radiusState: number
+): CommandResult | null {
   if (!raw.trim()) return null
   const q = normalize(raw)
   const words = q.split(/\s+/)
 
+  // ── Date scope (applies to both modes) ──────────────────────────────────────
+  const wantToday = words.some(w => ['oggi', 'aujourd', 'today'].includes(w))
+  const wantTomorrow = words.some(w => ['domani', 'demain', 'tomorrow'].includes(w))
+  const wantWeek = words.some(w => ['settimana', 'semaine', 'week'].includes(w))
+
+  // ── AREA COVERAGE: a city is named → cover it + its dintorni ─────────────────
+  const city = findCity(words)
+  if (city) {
+    const radiusMatch = q.match(/(\d{1,3})\s*km/)
+    const radiusKm = radiusMatch ? parseInt(radiusMatch[1]) : radiusState
+
+    const { plan: areaPlan, count } = planAreaCoverage(
+      clients, city.coord, radiusKm, homeCoords, visitsPerDay
+    )
+
+    let days = areaPlan
+    if (wantToday) days = areaPlan.slice(0, 1)
+    else if (wantTomorrow) days = areaPlan.slice(1, 2)
+    else if (wantWeek) days = areaPlan.slice(0, 5)
+
+    const totalVisits = days.reduce((s, d) => s + d.visits.length, 0)
+    const scope = wantToday ? ' · oggi' : wantTomorrow ? ' · domani' : wantWeek ? ' · settimana' : ''
+    return {
+      label: raw.trim(),
+      description: `${count} clienti entro ${radiusKm}km da ${titleCase(city.name)}${scope}`,
+      days,
+      totalVisits,
+      type: 'area',
+    }
+  }
+
+  // ── FILTER MODE (no city named) ─────────────────────────────────────────────
   let days = [...plan]
 
-  // ── 1. Date filter ────────────────────────────────────────────────────────
-  if (words.some(w => ['oggi', "aujourd", 'today'].includes(w))) {
-    days = days.filter(d => d.date === TODAY)
-  } else if (words.some(w => ['domani', 'demain', 'tomorrow'].includes(w))) {
-    days = days.filter(d => d.date === TOMORROW)
-  } else if (words.some(w => ['settimana', 'semaine', 'week'].includes(w))) {
+  if (wantToday) days = days.filter(d => d.date === TODAY)
+  else if (wantTomorrow) days = days.filter(d => d.date === TOMORROW)
+  else if (wantWeek) {
     const weekEnd = parseLocalDate(TODAY)
     weekEnd.setDate(weekEnd.getDate() + 7)
     const weekEndStr = toDateStr(weekEnd)
@@ -84,76 +129,30 @@ function parseQuery(raw: string, plan: DailyPlan[]): CommandResult | null {
   } else {
     for (const word of words) {
       if (word in DAY_NAMES) {
-        const targetDow = DAY_NAMES[word]
-        days = days.filter(d => parseLocalDate(d.date).getDay() === targetDow)
+        days = days.filter(d => parseLocalDate(d.date).getDay() === DAY_NAMES[word])
         break
       }
     }
   }
 
-  // ── 2. Urgency filter ─────────────────────────────────────────────────────
-  const urgentWords = ['urgenti', 'urgent', 'priorita', 'priority', 'critici']
-  const attentWords = ['attenzione', 'attention', 'warning']
-  const okWords     = ['ok', 'ontrack', 'track', 'normali']
-
-  const filterVisits = (pred: (v: import('../types').VisitDay) => boolean) =>
+  const filterVisits = (pred: (v: VisitDay) => boolean) =>
     days.map(d => ({ ...d, visits: d.visits.filter(pred) })).filter(d => d.visits.length > 0)
 
-  if (words.some(w => urgentWords.includes(w))) {
+  if (words.some(w => ['urgenti', 'urgent', 'priorita', 'priority', 'critici'].includes(w))) {
     days = filterVisits(v => v.urgency === 'urgent')
-  } else if (words.some(w => attentWords.includes(w))) {
+  } else if (words.some(w => ['attenzione', 'attention', 'warning'].includes(w))) {
     days = filterVisits(v => v.urgency === 'attention')
-  } else if (words.some(w => okWords.includes(w))) {
+  } else if (words.some(w => ['ok', 'ontrack', 'track', 'normali'].includes(w))) {
     days = filterVisits(v => v.urgency === 'ok')
   }
 
-  // ── 3. Re-route intent ────────────────────────────────────────────────────
-  // "oggi sono su charleroi fammi plan" → re-order today's visits from Charleroi
-  const rerouteCity = extractRerouteCity(q)
-  if (rerouteCity) {
-    const startCoords = getCityCoordinates(rerouteCity)
-    if (startCoords && days.length > 0) {
-      days = days.map(d => {
-        const reordered = rerouteDayFromCity(d.visits, startCoords)
-        return {
-          ...d,
-          visits: reordered,
-          totalKm: Math.round(reordered.reduce((s, v) => s + v.distance, 0) * 10) / 10,
-        }
-      })
-
-      const totalVisits = days.reduce((s, d) => s + d.visits.length, 0)
-      const cityDisplay = rerouteCity.charAt(0).toUpperCase() + rerouteCity.slice(1)
-      return {
-        label: raw.trim(),
-        description: `ottimizzate partendo da ${cityDisplay}`,
-        days,
-        totalVisits,
-        type: 'reroute',
-      }
-    }
-    // City not in database → fall through to regular city-name filter
-  }
-
-  // ── 4. City / client name filter ──────────────────────────────────────────
-  const STOPWORDS = new Set([
-    'le', 'la', 'les', 'di', 'da', 'a', 'su', 'per', 'in', 'con',
-    'delle', 'della', 'del', 'dei', 'gli', 'il', 'lo', 'un', 'una',
-    'visite', 'visita', 'visit', 'fammi', 'mostra', 'show', 'dammi', 'give',
-    'tutte', 'tutti', 'all', 'quelli', 'quelle', 'questa', 'questo',
-    'urgenti', 'urgent', 'priorita', 'attenzione', 'attention',
-    'oggi', 'domani', 'settimana', 'today', 'tomorrow', 'week',
-    'cliente', 'client', 'clienti', 'sono', 'parto', 'partendo', 'plan',
-    'ottimizza', 'route', 'pianifica', 'percorso', ...Object.keys(DAY_NAMES),
-  ])
-
+  // Free-text client/town name match
   const searchTokens = words.filter(w => w.length >= 3 && !STOPWORDS.has(w))
-
   for (const token of searchTokens) {
-    const matchingTown   = days.some(d => d.visits.some(v => normalize(v.town).includes(token)))
-    const matchingClient = days.some(d => d.visits.some(v => normalize(v.clientName).includes(token)))
-
-    if (matchingTown || matchingClient) {
+    const hit = days.some(d => d.visits.some(
+      v => normalize(v.town).includes(token) || normalize(v.clientName).includes(token)
+    ))
+    if (hit) {
       days = days
         .map(d => ({
           ...d,
@@ -169,37 +168,38 @@ function parseQuery(raw: string, plan: DailyPlan[]): CommandResult | null {
   return { label: raw.trim(), days, totalVisits, type: 'filter' }
 }
 
-// ── Example prompts ────────────────────────────────────────────────────────────
-
 const EXAMPLES = [
-  { text: 'visite di oggi', icon: '📅' },
+  { text: 'Charleroi', icon: '📍' },
+  { text: 'zona Mons 30km', icon: '🗺️' },
+  { text: 'oggi sono su Namur', icon: '🚗' },
   { text: 'urgenti questa settimana', icon: '🔴' },
-  { text: 'oggi sono su Charleroi fammi plan', icon: '📍' },
-  { text: 'urgenti domani', icon: '⚡' },
-  { text: 'visite a Namur', icon: '🗺️' },
 ]
 
-// ── Component ──────────────────────────────────────────────────────────────────
-
-export function CommandBar({ plan, onResult }: CommandBarProps) {
+export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }: CommandBarProps) {
   const [query, setQuery] = useState('')
   const [focused, setFocused] = useState(false)
+  const [radius, setRadius] = useState(20)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const run = useCallback((q: string) => {
-    onResult(parseQuery(q, plan))
-  }, [plan, onResult])
+  const run = useCallback((q: string, r: number) => {
+    onResult(parseQuery(q, plan, clients, homeCoords, visitsPerDay, r))
+  }, [plan, clients, homeCoords, visitsPerDay, onResult])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value
     setQuery(v)
     if (!v.trim()) { onResult(null); return }
-    run(v)
+    run(v, radius)
+  }
+
+  const handleRadius = (r: number) => {
+    setRadius(r)
+    if (query.trim()) run(query, r)
   }
 
   const handleExample = (ex: string) => {
     setQuery(ex)
-    run(ex)
+    run(ex, radius)
     inputRef.current?.focus()
   }
 
@@ -211,11 +211,8 @@ export function CommandBar({ plan, onResult }: CommandBarProps) {
 
   return (
     <div className="w-full space-y-2">
-      {/* Input */}
       <div className={`relative flex items-center gap-2 bg-white dark:bg-slate-800 rounded-2xl border-2 transition-all duration-200 shadow-sm ${
-        focused
-          ? 'border-indigo-500 shadow-indigo-500/20 shadow-lg'
-          : 'border-slate-200 dark:border-slate-700'
+        focused ? 'border-indigo-500 shadow-indigo-500/20 shadow-lg' : 'border-slate-200 dark:border-slate-700'
       }`}>
         <div className="pl-4 flex items-center gap-2 text-indigo-500 shrink-0">
           <Sparkles className="h-4 w-4" />
@@ -227,7 +224,7 @@ export function CommandBar({ plan, onResult }: CommandBarProps) {
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder='Es: "urgenti oggi", "sono su Charleroi fammi plan", "visite a Namur"'
+          placeholder='Scrivi una città ("Charleroi", "zona Mons 30km") o un filtro ("urgenti oggi")'
           className="flex-1 py-3 bg-transparent text-sm text-slate-900 dark:text-slate-50 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
         />
         <AnimatePresence>
@@ -243,6 +240,26 @@ export function CommandBar({ plan, onResult }: CommandBarProps) {
             </motion.button>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Radius selector — used when you name a city */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+          <MapPin className="h-3 w-3" /> Raggio dintorni:
+        </span>
+        {RADII.map(r => (
+          <button
+            key={r}
+            onClick={() => handleRadius(r)}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+              radius === r
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+            }`}
+          >
+            {r}km
+          </button>
+        ))}
       </div>
 
       {/* Example chips */}

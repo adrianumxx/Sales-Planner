@@ -7,6 +7,9 @@ export interface Client {
   quality?: number;
   customerDetails?: string;
   address?: string;
+  postalCode?: string;
+  lat?: number;
+  lon?: number;
   daysSinceLastVisit?: number;
 }
 
@@ -15,6 +18,8 @@ export interface VisitDay {
   clientName: string;
   town: string;
   address?: string;
+  lat?: number;
+  lon?: number;
   distance: number;
   urgency: 'urgent' | 'attention' | 'ok';
   timeSlot: string;
