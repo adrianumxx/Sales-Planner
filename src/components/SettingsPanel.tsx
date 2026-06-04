@@ -116,7 +116,7 @@ export function SettingsPanel({
                 list="major-cities"
                 value={homeAddress}
                 onChange={(e) => onHomeAddressChange(e.target.value)}
-                placeholder="Es: Charleroi, Mons, La Louvière…"
+                placeholder="e.g. Charleroi, Mons, La Louvière…"
                 className="w-full px-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
               />
               <datalist id="major-cities">
@@ -125,7 +125,7 @@ export function SettingsPanel({
                 ))}
               </datalist>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                📍 Punto di partenza per il calcolo di distanze e percorsi
+                📍 Starting point for distance and route calculations
               </p>
             </motion.div>
 

@@ -106,10 +106,10 @@ function parseQuery(
     else if (wantWeek) days = areaPlan.slice(0, 5)
 
     const totalVisits = days.reduce((s, d) => s + d.visits.length, 0)
-    const scope = wantToday ? ' · oggi' : wantTomorrow ? ' · domani' : wantWeek ? ' · settimana' : ''
+    const scope = wantToday ? ' · today' : wantTomorrow ? ' · tomorrow' : wantWeek ? ' · this week' : ''
     return {
       label: raw.trim(),
-      description: `${count} clienti entro ${radiusKm}km da ${titleCase(city.name)}${scope}`,
+      description: `${count} clients within ${radiusKm}km of ${titleCase(city.name)}${scope}`,
       days,
       totalVisits,
       type: 'area',
@@ -170,9 +170,9 @@ function parseQuery(
 
 const EXAMPLES = [
   { text: 'Charleroi', icon: '📍' },
-  { text: 'zona Mons 30km', icon: '🗺️' },
-  { text: 'oggi sono su Namur', icon: '🚗' },
-  { text: 'urgenti questa settimana', icon: '🔴' },
+  { text: 'Mons area 30km', icon: '🗺️' },
+  { text: "today I'm in Namur", icon: '🚗' },
+  { text: 'urgent this week', icon: '🔴' },
 ]
 
 export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }: CommandBarProps) {
@@ -224,7 +224,7 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder='Scrivi una città ("Charleroi", "zona Mons 30km") o un filtro ("urgenti oggi")'
+          placeholder='Type a city ("Charleroi", "Mons area 30km") or a filter ("urgent today")'
           className="flex-1 py-3 bg-transparent text-sm text-slate-900 dark:text-slate-50 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
         />
         <AnimatePresence>
@@ -245,7 +245,7 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
       {/* Radius selector — used when you name a city */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-          <MapPin className="h-3 w-3" /> Raggio dintorni:
+          <MapPin className="h-3 w-3" /> Coverage radius:
         </span>
         {RADII.map(r => (
           <button

@@ -292,7 +292,7 @@ function VisitRow({
               target="_blank"
               rel="noopener noreferrer"
               className="group flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-1 rounded-lg transition-colors"
-              title="Apri in Google Maps"
+              title="Open in Google Maps"
             >
               <MapPin className="h-4 w-4" />
               <span className="font-medium text-slate-700 dark:text-slate-300">{visit.town}</span>
@@ -308,10 +308,10 @@ function VisitRow({
             {visit.lastVisitDays != null && visit.lastVisitDays > 0 && (
               <div
                 className="flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 px-3 py-1 rounded-lg"
-                title="Giorni dall'ultima visita"
+                title="Days since last visit"
               >
                 <History className="h-4 w-4" />
-                {visit.lastVisitDays}g fa
+                {visit.lastVisitDays}d ago
               </div>
             )}
           </motion.div>
@@ -342,7 +342,7 @@ function VisitRow({
                   value={noteValue}
                   onChange={(e) => setNoteValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveNote()}
-                  placeholder="Aggiungi una nota..."
+                  placeholder="Add a note..."
                   className="w-full sm:flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   autoFocus
                 />
@@ -352,7 +352,7 @@ function VisitRow({
                   onClick={handleSaveNote}
                   className="px-4 py-2 text-xs bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg hover:shadow-lg transition-all"
                 >
-                  Salva
+                  Save
                 </motion.button>
               </motion.div>
             ) : (
@@ -362,7 +362,7 @@ function VisitRow({
                 className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-cyan-400 transition-colors flex items-center gap-1"
               >
                 <Edit2 className="h-3 w-3" />
-                {noteText || 'Aggiungi nota...'}
+                {noteText || 'Add note...'}
               </motion.button>
             )}
 

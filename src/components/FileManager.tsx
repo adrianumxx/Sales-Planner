@@ -36,7 +36,7 @@ export function FileManager({ hasData, onUpload, onClear }: FileManagerProps) {
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
         className="p-2.5 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 text-white shadow-lg hover:shadow-xl transition-all"
-        title="Gestisci file"
+        title="Manage files"
       >
         <Plus className="h-5 w-5" />
       </motion.button>
@@ -70,8 +70,8 @@ export function FileManager({ hasData, onUpload, onClear }: FileManagerProps) {
               >
                 <Upload className="h-5 w-5 text-cyan-400 group-hover:text-cyan-300" />
                 <div>
-                  <p className="font-medium text-white">Carica CSV</p>
-                  <p className="text-xs text-slate-400">Nuovo file di clienti</p>
+                  <p className="font-medium text-white">Upload file</p>
+                  <p className="text-xs text-slate-400">New customer file</p>
                 </div>
               </motion.button>
 
@@ -87,8 +87,8 @@ export function FileManager({ hasData, onUpload, onClear }: FileManagerProps) {
                 >
                   <Trash2 className="h-5 w-5 text-red-400 group-hover:text-red-300" />
                   <div>
-                    <p className="font-medium text-white">Svuota dati</p>
-                    <p className="text-xs text-slate-400">Cancella piano corrente</p>
+                    <p className="font-medium text-white">Clear data</p>
+                    <p className="text-xs text-slate-400">Delete current plan</p>
                   </div>
                 </motion.button>
               )}
