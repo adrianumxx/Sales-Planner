@@ -1,12 +1,12 @@
 import type { Client, DailyPlan, VisitDay, CityCoord } from '../types'
 import { getDistanceFromHome } from './geo'
 
-// 2-week planning: urgency thresholds based on visit frequency
-const URGENT_DAYS = 90    // not visited in 3+ months → top priority
-const ATTENTION_DAYS = 45 // not visited in 6 weeks → schedule this week
+// Urgency thresholds (days since last visit)
+const URGENT_DAYS    = 90  // 3+ months → top priority
+const ATTENTION_DAYS = 45  // 6 weeks   → schedule this cycle
 
 export function categorizeUrgency(lastVisitDays: number): 'urgent' | 'attention' | 'ok' {
-  if (lastVisitDays >= URGENT_DAYS) return 'urgent'
+  if (lastVisitDays >= URGENT_DAYS)    return 'urgent'
   if (lastVisitDays >= ATTENTION_DAYS) return 'attention'
   return 'ok'
 }
@@ -18,117 +18,57 @@ export function generatePlan(
 ): DailyPlan[] {
   if (!clients.length) return []
 
-  // Recalculate urgency dynamically from lastVisitDays
+  // 1. Enrich each client with computed urgency from lastVisitDays
   const enriched = clients.map(c => ({
     ...c,
     urgency: c.lastVisitDays > 0
       ? categorizeUrgency(c.lastVisitDays)
-      : (c.urgency || 'ok'),
-  }))
+      : (c.urgency ?? 'ok'),
+  })) as Client[]
 
-  const urgent     = enriched.filter(c => c.urgency === 'urgent')
-  const attention  = enriched.filter(c => c.urgency === 'attention')
-  const ok         = enriched.filter(c => c.urgency === 'ok')
+  // 2. Sort: urgent first → attention → ok, then most overdue within each group
+  const urgent    = enriched.filter(c => c.urgency === 'urgent')
+                            .sort((a, b) => b.lastVisitDays - a.lastVisitDays)
+  const attention = enriched.filter(c => c.urgency === 'attention')
+                            .sort((a, b) => b.lastVisitDays - a.lastVisitDays)
+  const ok        = enriched.filter(c => c.urgency === 'ok')
+                            .sort((a, b) => b.lastVisitDays - a.lastVisitDays)
 
-  // Within each category: most days since last visit first
-  const sortedByPriority: Client[] = [
-    ...urgent.sort((a, b) => b.lastVisitDays - a.lastVisitDays),
-    ...attention.sort((a, b) => b.lastVisitDays - a.lastVisitDays),
-    ...ok.sort((a, b) => b.lastVisitDays - a.lastVisitDays),
-  ]
+  const sorted = [...urgent, ...attention, ...ok]
 
-  // Generate working-day time slots (09:00–12:00, 14:00–17:00, skip lunch)
-  const generateTimeSlots = (count: number): string[] => {
-    const slots: string[] = []
-    const morning   = { start: 9,  end: 12 }
-    const afternoon = { start: 14, end: 17 }
-    const blocks    = [morning, afternoon]
-    const total     = (morning.end - morning.start + afternoon.end - afternoon.start) * 60
-    const interval  = Math.floor(total / count)
+  // 3. Group into days, clustering nearby towns together
+  const clientsByDay = groupByDay(sorted, visitsPerDay)
 
-    let minutes = 0
-    for (let i = 0; i < count; i++) {
-      const m = minutes % 60
-      const h = Math.floor(minutes / 60)
+  // 4. Generate time slots (09–12, 14–17, lunch excluded)
+  const timeSlots = buildTimeSlots(visitsPerDay)
 
-      let absH = h
-      if (absH >= morning.end - morning.start) {
-        absH += afternoon.start - morning.end
-      }
-      const realH = morning.start + absH
-
-      if (realH < afternoon.end) {
-        slots.push(`${String(realH).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-      }
-      minutes += interval
-    }
-
-    return slots.length > 0 ? slots : ['09:00', '14:00']
-  }
-
-  // Group clients geographically: fill each day with nearby clients
-  const assignClientsTodays = (clientList: Client[], perDay: number): Client[][] => {
-    const days: Client[][] = []
-    const remaining = [...clientList]
-
-    while (remaining.length > 0) {
-      const dayClients: Client[] = []
-
-      if (remaining.length > 0) dayClients.push(remaining.shift()!)
-
-      while (dayClients.length < perDay && remaining.length > 0) {
-        let closestIdx = 0
-        let minDist = Infinity
-
-        for (let i = 0; i < remaining.length; i++) {
-          for (const dc of dayClients) {
-            const dist = remaining[i].town === dc.town ? 0 : 1
-            if (dist < minDist) { minDist = dist; closestIdx = i }
-          }
-        }
-
-        dayClients.push(remaining.splice(closestIdx, 1)[0])
-      }
-
-      days.push(dayClients)
-    }
-
-    return days
-  }
-
-  const clientsByDay = assignClientsTodays(sortedByPriority, visitsPerDay)
-  const timeSlots    = generateTimeSlots(visitsPerDay)
-
-  // Build 2-week calendar (only Tuesday–Friday)
+  // 5. Build plan across next 14 calendar days, Tue–Fri only
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const plan: DailyPlan[] = []
   let dayIndex = 0
 
-  // Iterate exactly 14 calendar days from today
   for (let i = 0; i < 14; i++) {
     const date = new Date(today)
     date.setDate(date.getDate() + i)
     const dow = date.getDay()
 
-    // Only Tuesday (2) → Friday (5)
-    if (dow < 2 || dow > 5) continue
+    if (dow < 2 || dow > 5) continue   // skip Mon, Sat, Sun
     if (dayIndex >= clientsByDay.length) break
 
     const dateStr    = date.toISOString().split('T')[0]
-    const dayClients = clientsByDay[dayIndex]
-    const sorted     = sortClientsByProximity(dayClients, homeCoords)
+    const dayClients = sortByProximity(clientsByDay[dayIndex])
 
-    const visits: VisitDay[] = sorted.map((client, idx) => ({
+    const visits: VisitDay[] = dayClients.map((client, idx) => ({
       id:         `${dateStr}-${idx}`,
       clientName: client.clientName,
       town:       client.town,
       distance:   getDistanceFromHome(client.town, homeCoords),
-      urgency:    (client as any).urgency || 'ok',
+      urgency:    client.urgency ?? 'ok',
       timeSlot:   timeSlots[idx % timeSlots.length],
       completed:  false,
       notes:      '',
-      quality:    client.quality || 7,
+      quality:    client.quality ?? 7,
     }))
 
     if (visits.length > 0) {
@@ -145,30 +85,84 @@ export function generatePlan(
   return plan
 }
 
-// Nearest-neighbour sort within a single day
-function sortClientsByProximity(clients: Client[], homeCoords: CityCoord): Client[] {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Cluster sorted clients into day-sized buckets, grouping same-town clients */
+function groupByDay(clients: Client[], perDay: number): Client[][] {
+  const days: Client[][] = []
+  const remaining = [...clients]
+
+  while (remaining.length > 0) {
+    const bucket: Client[] = []
+    bucket.push(remaining.shift()!)          // seed: next highest priority
+
+    while (bucket.length < perDay && remaining.length > 0) {
+      // Prefer same town as any client already in bucket
+      let idx = remaining.findIndex(r => bucket.some(b => b.town === r.town))
+      if (idx === -1) idx = 0               // fallback: next in priority order
+      bucket.push(remaining.splice(idx, 1)[0])
+    }
+
+    days.push(bucket)
+  }
+
+  return days
+}
+
+/** Within a single day, order by town proximity (same town adjacent) */
+function sortByProximity(clients: Client[]): Client[] {
   if (clients.length <= 1) return clients
 
-  const sorted: Client[] = []
-  const remaining = [...clients]
+  const sorted: Client[]    = []
+  const remaining: Client[] = [...clients]
 
   sorted.push(remaining.shift()!)
 
   while (remaining.length > 0) {
-    let nearestIdx = 0
-    let minDist    = Infinity
-    const last     = sorted[sorted.length - 1]
-
-    for (let i = 0; i < remaining.length; i++) {
-      if (remaining[i].town === last.town) { nearestIdx = i; break }
-    }
-
-    if (minDist === Infinity) nearestIdx = 0
-    sorted.push(remaining.splice(nearestIdx, 1)[0])
+    const last = sorted[sorted.length - 1]
+    const sameIdx = remaining.findIndex(r => r.town === last.town)
+    const idx = sameIdx !== -1 ? sameIdx : 0
+    sorted.push(remaining.splice(idx, 1)[0])
   }
 
   return sorted
 }
+
+/** Time slots across 09–12 and 14–17, distributed evenly */
+function buildTimeSlots(count: number): string[] {
+  // Working minutes: 3h morning + 3h afternoon = 360 min
+  const totalMin = 360
+  const interval = Math.floor(totalMin / Math.max(count, 1))
+  const slots: string[] = []
+
+  let elapsed = 0
+  for (let i = 0; i < count; i++) {
+    const blockMin = elapsed
+    let h: number
+    let m: number
+
+    if (blockMin < 180) {
+      // morning block: offset from 09:00
+      h = 9  + Math.floor(blockMin / 60)
+      m = blockMin % 60
+    } else {
+      // afternoon block: offset from 14:00
+      const pm = blockMin - 180
+      h = 14 + Math.floor(pm / 60)
+      m = pm % 60
+    }
+
+    if (h < 17) {
+      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    }
+
+    elapsed += interval
+  }
+
+  return slots.length > 0 ? slots : ['09:00', '11:00', '14:00', '16:00']
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
 
 export function getUrgencyColor(urgency: string): string {
   switch (urgency) {
