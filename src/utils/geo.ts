@@ -66,6 +66,65 @@ export function coordsForPostal(zip: string): Coord | null {
   return p ? { lat: p[0], lon: p[1] } : null
 }
 
+// All known Belgian city names (accent-stripped, lowercased), built once.
+const CITY_NAMES = Object.keys(CITY)
+
+function titleCaseCity(s: string): string {
+  return s.replace(/\b\w/g, ch => ch.toUpperCase())
+}
+
+/**
+ * Prefix/substring search over the offline Belgian city list, for typeahead.
+ * Prefix matches rank first (shorter names — i.e. the well-known cities — first),
+ * then substring matches. Returns display-cased names.
+ */
+export function searchCities(prefix: string, limit = 6): string[] {
+  const p = norm(prefix)
+  if (!p) return MAJOR_CITIES.slice(0, limit)
+  const starts: string[] = []
+  const contains: string[] = []
+  for (const name of CITY_NAMES) {
+    if (name.startsWith(p)) starts.push(name)
+    else if (name.includes(p)) contains.push(name)
+  }
+  starts.sort((a, b) => a.length - b.length || a.localeCompare(b))
+  contains.sort((a, b) => a.length - b.length || a.localeCompare(b))
+  return [...starts, ...contains].slice(0, limit).map(titleCaseCity)
+}
+
+/** Bounded Levenshtein — returns early once it provably exceeds `max`. */
+function levenshtein(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    let rowMin = i
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+      cur.push(v)
+      if (v < rowMin) rowMin = v
+    }
+    if (rowMin > max) return max + 1
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+/** Closest city name to a (probably mistyped) token, within edit distance 2. */
+export function nearestCity(token: string): string | null {
+  const t = norm(token)
+  if (t.length < 4) return null
+  if (CITY[t]) return null // already a valid city
+  let best: string | null = null
+  let bestD = 3
+  for (const name of CITY_NAMES) {
+    const d = levenshtein(t, name, 2)
+    if (d < bestD) { bestD = d; best = name; if (d === 1) break }
+  }
+  return best ? titleCaseCity(best) : null
+}
+
 export function coordsForCity(name: string): Coord | null {
   if (!name) return null
   const n = norm(name)
