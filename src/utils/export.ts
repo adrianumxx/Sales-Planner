@@ -1,4 +1,7 @@
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import type { DailyPlan } from '../types'
+import { formatDateLabel, toDateStr } from './date'
 
 export function exportToCSV(plan: DailyPlan[]): void {
   const rows = [['Data', 'Cliente', 'Città', 'Distanza (km)', 'Urgenza', 'Ora', 'Completato', 'Note']]
@@ -74,4 +77,88 @@ END:VEVENT
   link.setAttribute('href', url)
   link.setAttribute('download', `sales-plan-${new Date().toISOString().split('T')[0]}.ics`)
   link.click()
+}
+
+export function exportToPDF(plan: DailyPlan[]): void {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+
+  const totalVisits = plan.reduce((s, d) => s + d.visits.length, 0)
+  const totalKm = Math.round(plan.reduce((s, d) => s + d.totalKm, 0) * 10) / 10
+
+  // Title
+  doc.setFontSize(18)
+  doc.setTextColor(30, 30, 40)
+  doc.text('Piano Visite', 14, 18)
+  doc.setFontSize(10)
+  doc.setTextColor(120, 120, 130)
+  doc.text(
+    `Generato il ${new Date().toLocaleDateString('it-IT')}  ·  ${totalVisits} visite  ·  ${totalKm} km`,
+    14, 25
+  )
+
+  const urgLabel = (u: string) =>
+    u === 'urgent' ? 'Urgente' : u === 'attention' ? 'Attenzione' : 'OK'
+
+  let y = 32
+
+  plan.forEach((day) => {
+    if (y > pageH - 30) { doc.addPage(); y = 18 }
+
+    doc.setFontSize(12)
+    doc.setTextColor(50, 50, 60)
+    doc.text(
+      `${formatDateLabel(day.date, { weekday: 'long', day: 'numeric', month: 'long' }, 'it-IT')}   ·   ${day.visits.length} visite · ${day.totalKm} km`,
+      14, y
+    )
+
+    autoTable(doc, {
+      startY: y + 3,
+      head: [['Ora', 'Cliente', 'Città', 'Indirizzo', 'Km', 'Stato', 'Ritardo']],
+      body: day.visits.map((v) => [
+        v.timeSlot,
+        v.clientName,
+        v.town,
+        v.address || '-',
+        v.distance ? String(v.distance) : '-',
+        urgLabel(v.urgency),
+        v.lastVisitDays ? `${v.lastVisitDays}g` : '-',
+      ]),
+      styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 14 },
+        1: { cellWidth: 36 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 52 },
+        4: { cellWidth: 12, halign: 'right' },
+        5: { cellWidth: 20 },
+        6: { cellWidth: 16, halign: 'right' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 5) {
+          const u = day.visits[data.row.index]?.urgency
+          if (u === 'urgent') data.cell.styles.textColor = [220, 38, 38]
+          else if (u === 'attention') data.cell.styles.textColor = [217, 119, 6]
+          else data.cell.styles.textColor = [22, 163, 74]
+        }
+      },
+      margin: { left: 14, right: 14 },
+    })
+
+    // @ts-expect-error lastAutoTable is added by the plugin at runtime
+    y = (doc.lastAutoTable?.finalY ?? y) + 9
+  })
+
+  // Page numbers
+  const pages = doc.getNumberOfPages()
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i)
+    doc.setFontSize(8)
+    doc.setTextColor(160, 160, 170)
+    doc.text(`Pagina ${i} / ${pages}`, pageW - 32, pageH - 8)
+  }
+
+  doc.save(`piano-visite-${toDateStr(new Date())}.pdf`)
 }
