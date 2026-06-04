@@ -13,7 +13,17 @@
       "Bash(git push *)",
       "Bash(vercel --version)",
       "Bash(vercel --prod --confirm)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(curl -s http://localhost:5173)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__select_browser",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "mcp__Claude_in_Chrome__computer",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(cp /tmp/test_clients.csv \"$HOME/Downloads/test_clients.csv\" && ls -la \"$HOME/Downloads/test_clients.csv\")",
+      "mcp__Claude_in_Chrome__navigate",
+      "Bash(pkill -f \"npm run dev\")"
     ]
   }
 }

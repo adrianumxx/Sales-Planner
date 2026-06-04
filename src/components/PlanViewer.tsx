@@ -6,14 +6,22 @@ import { getUrgencyColor, getUrgencyBadge } from '../utils/planning'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 import { VisitTimer } from './VisitTimer'
 
+type TimerState = 'idle' | 'running' | 'paused'
+
 interface PlanViewerProps {
   plan: DailyPlan[]
   completedVisits: Set<string>
   notes: Record<string, string>
   voiceNotes?: Record<string, Blob>
+  activeVisit?: string | null
+  visitTimerStates?: Record<string, TimerState>
+  visitElapsedTimes?: Record<string, number>
+  visitStartTimes?: Record<string, number>
+  visitPausedTimes?: Record<string, number>
   onToggleComplete: (visitId: string) => void
   onUpdateNote: (visitId: string, note: string) => void
   onSaveVoiceNote?: (visitId: string, audioData: Blob) => void
+  onUpdateTimerState?: (visitId: string, state: TimerState, elapsed: number, startTime?: number) => void
 }
 
 export function PlanViewer({
@@ -22,13 +30,14 @@ export function PlanViewer({
   notes,
   voiceNotes = {},
   activeVisit,
+  visitTimerStates = {},
+  visitElapsedTimes = {},
   visitStartTimes = {},
-  visitDurations = {},
+  visitPausedTimes = {},
   onToggleComplete,
   onUpdateNote,
   onSaveVoiceNote = (() => {}) as any,
-  onStartVisit = (() => {}) as any,
-  onEndVisit = (() => {}) as any,
+  onUpdateTimerState = (() => {}) as any,
 }: PlanViewerProps) {
   if (plan.length === 0) {
     return (
@@ -124,14 +133,14 @@ export function PlanViewer({
                     completed={completedVisits.has(visit.id)}
                     notes={notes[visit.id] || ''}
                     hasVoiceNote={!!voiceNotes[visit.id]}
-                    isActiveVisit={activeVisit === visit.id}
-                    visitStartTime={visitStartTimes[visit.id]}
-                    visitDuration={visitDurations[visit.id]}
+                    timerState={visitTimerStates[visit.id] || 'idle'}
+                    timerElapsed={visitElapsedTimes[visit.id] || 0}
+                    timerStartTime={visitStartTimes[visit.id]}
+                    timerPausedTime={visitPausedTimes[visit.id] || 0}
                     onToggleComplete={() => onToggleComplete(visit.id)}
                     onUpdateNote={(note) => onUpdateNote(visit.id, note)}
                     onSaveVoiceNote={(audio) => onSaveVoiceNote(visit.id, audio)}
-                    onStartVisit={() => onStartVisit(visit.id)}
-                    onEndVisit={(duration) => onEndVisit(visit.id, duration)}
+                    onUpdateTimerState={(state, elapsed, startTime) => onUpdateTimerState(visit.id, state, elapsed, startTime)}
                   />
                 ))}
               </AnimatePresence>
@@ -148,27 +157,27 @@ function VisitRow({
   completed,
   notes,
   hasVoiceNote,
-  isActiveVisit,
-  visitStartTime,
-  visitDuration,
+  timerState,
+  timerElapsed,
+  timerStartTime,
+  timerPausedTime,
   onToggleComplete,
   onUpdateNote,
   onSaveVoiceNote,
-  onStartVisit,
-  onEndVisit,
+  onUpdateTimerState,
 }: {
   visit: VisitDay
   completed: boolean
   notes: string
   hasVoiceNote: boolean
-  isActiveVisit: boolean
-  visitStartTime?: number
-  visitDuration?: number
+  timerState: TimerState
+  timerElapsed: number
+  timerStartTime?: number
+  timerPausedTime: number
   onToggleComplete: () => void
   onUpdateNote: (note: string) => void
   onSaveVoiceNote: (audio: Blob) => void
-  onStartVisit: () => void
-  onEndVisit: (duration: number) => void
+  onUpdateTimerState: (state: TimerState, elapsed: number, startTime?: number) => void
 }) {
   const [editingNote, setEditingNote] = useState(false)
   const [noteValue, setNoteValue] = useState(notes)
@@ -248,10 +257,11 @@ function VisitRow({
             <div className="flex items-center gap-2">
               <VisitTimer
                 visitId={visit.id}
-                onStartVisit={onStartVisit}
-                onEndVisit={onEndVisit}
-                isActive={isActiveVisit}
-                startTime={visitStartTime}
+                onStateChange={onUpdateTimerState}
+                state={timerState}
+                elapsed={timerElapsed}
+                startTime={timerStartTime}
+                pausedTime={timerPausedTime}
               />
               <motion.span
                 whileHover={{ scale: 1.05 }}
