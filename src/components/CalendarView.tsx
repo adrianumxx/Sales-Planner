@@ -88,14 +88,14 @@ export function CalendarView({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-gradient-to-br from-white/50 to-slate-50/50 dark:from-slate-800/50 dark:to-slate-900/50 rounded-2xl p-6 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50"
+      className="bg-gradient-to-br from-white/50 to-slate-50/50 dark:from-slate-800/50 dark:to-slate-900/50 rounded-2xl p-3 sm:p-6 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50"
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
         <motion.h2
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="text-2xl font-bold text-slate-900 dark:text-slate-50"
+          className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-50"
         >
           {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
         </motion.h2>
@@ -120,13 +120,16 @@ export function CalendarView({
       </div>
 
       {/* Weekday Headers */}
-      <div className="grid grid-cols-7 gap-2 mb-4">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+      <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 sm:mb-4">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
           <div
-            key={day}
-            className="text-center text-xs font-bold text-slate-600 dark:text-slate-400 py-2"
+            key={i}
+            className="text-center text-xs font-bold text-slate-600 dark:text-slate-400 py-1 sm:py-2"
           >
-            {day}
+            <span className="sm:hidden">{day}</span>
+            <span className="hidden sm:inline">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i]}
+            </span>
           </div>
         ))}
       </div>
@@ -136,7 +139,7 @@ export function CalendarView({
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-7 gap-2"
+        className="grid grid-cols-7 gap-1 sm:gap-2"
       >
         {/* Empty days */}
         {emptyDays.map((_, i) => (
@@ -157,7 +160,7 @@ export function CalendarView({
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => onDateSelect(dateStr)}
-              className={`relative p-3 rounded-lg transition-all duration-300 ${
+              className={`relative p-1 sm:p-3 rounded-lg transition-all duration-300 min-h-[36px] sm:min-h-0 ${
                 isSelected
                   ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-500/50'
                   : isWorkday_
@@ -166,14 +169,14 @@ export function CalendarView({
               }`}
               disabled={!isWorkday_}
             >
-              <div className="text-sm font-bold mb-1">{day}</div>
+              <div className="text-xs sm:text-sm font-bold mb-0.5 sm:mb-1">{day}</div>
 
               {/* Visit indicators */}
               {visits.length > 0 && (
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="flex flex-wrap gap-1"
+                  className="flex flex-wrap gap-0.5 sm:gap-1"
                 >
                   {visits.slice(0, 3).map((visit, idx) => (
                     <motion.button
@@ -191,7 +194,7 @@ export function CalendarView({
                           setDraggedVisit(null)
                         }
                       }}
-                      className={`w-2 h-2 rounded-full cursor-grab active:cursor-grabbing transition-all ${
+                      className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full cursor-grab active:cursor-grabbing transition-all ${
                         visit.urgency === 'urgent'
                           ? 'bg-red-500'
                           : visit.urgency === 'attention'
@@ -218,7 +221,7 @@ export function CalendarView({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl"
+            className="mt-4 sm:mt-6 p-3 sm:p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl w-full"
           >
             <h3 className="font-bold text-slate-900 dark:text-slate-50 mb-3">
               {new Date(selectedDate).toLocaleDateString('en-US', {
