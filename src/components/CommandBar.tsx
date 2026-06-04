@@ -37,7 +37,7 @@ const DAY_NAMES: Record<string, number> = {
 
 const WEEKDAY_LABEL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-const RADII = [10, 20, 30, 50]
+const RADII = [5, 10, 20, 30, 50]
 
 function normalize(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9\s]/g, '').trim()

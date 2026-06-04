@@ -1,6 +1,6 @@
 import type { Client, DailyPlan, VisitDay } from '../types'
 import { getCityCoordinates, getDistance } from './geo'
-import { toDateStr } from './date'
+import { nextWorkdays } from './date'
 
 // Urgency thresholds (days since last visit)
 const URGENT_DAYS    = 90  // 3+ months → top priority
@@ -21,6 +21,51 @@ function coordOf(item: { lat?: number; lon?: number; town: string }): Pt | null 
   return c ? { lat: c.lat, lon: c.lon } : null
 }
 
+type Located = { lat?: number; lon?: number; town: string }
+
+/** Nearest-neighbour visiting order starting from `home` (straight-line). */
+function nnOrder<T extends Located>(items: T[], home: Pt): T[] {
+  if (items.length <= 1) return [...items]
+  const remaining = [...items]
+  const ordered: T[] = []
+  let cur: Pt = { lat: home.lat, lon: home.lon }
+  while (remaining.length) {
+    let idx = 0
+    let best = Infinity
+    remaining.forEach((c, i) => {
+      const p = coordOf(c)
+      if (p) {
+        const d = getDistance(cur.lat, cur.lon, p.lat, p.lon)
+        if (d < best) { best = d; idx = i }
+      }
+    })
+    const next = remaining.splice(idx, 1)[0]
+    ordered.push(next)
+    const np = coordOf(next)
+    if (np) cur = np
+  }
+  return ordered
+}
+
+/**
+ * Real route metrics for an ordered list of stops: each leg is prev→next
+ * (home→first for the first stop), and the total includes the drive back home.
+ * `legs[i]` is the distance driven to reach stop i — not the home→stop distance.
+ */
+function routeFromHome<T extends Located>(items: T[], home: Pt): { legs: number[]; totalKm: number } {
+  let prev: Pt = { lat: home.lat, lon: home.lon }
+  const legs: number[] = []
+  for (const it of items) {
+    const p = coordOf(it) ?? prev
+    const leg = getDistance(prev.lat, prev.lon, p.lat, p.lon)
+    legs.push(Math.round(leg * 10) / 10)
+    prev = p
+  }
+  const back = items.length ? getDistance(prev.lat, prev.lon, home.lat, home.lon) : 0
+  const sum = legs.reduce((s, x) => s + x, 0) + back
+  return { legs, totalKm: Math.round(sum * 10) / 10 }
+}
+
 const urgencyRank = (u?: string) => (u === 'urgent' ? 0 : u === 'attention' ? 1 : 2)
 
 /** Priority sort: urgent → attention → ok, most overdue first within each tier. */
@@ -33,7 +78,7 @@ function prioritize(clients: Client[]): Client[] {
 }
 
 /** Core pipeline shared by full-plan and area-coverage generation. */
-function buildPlan(clients: Client[], homeCoords: Pt, visitsPerDay: number): DailyPlan[] {
+function buildPlan(clients: Client[], homeCoords: Pt, visitsPerDay: number, blocked?: Set<string>): DailyPlan[] {
   if (!clients.length) return []
 
   // 1. Compute urgency from days-overdue
@@ -48,66 +93,81 @@ function buildPlan(clients: Client[], homeCoords: Pt, visitsPerDay: number): Dai
   // 3. Cluster into days (most-overdue account seeds each day, filled by nearest)
   const clientsByDay = groupByDay(sorted, visitsPerDay)
 
-  // 4. Time slots
-  const timeSlots = buildTimeSlots(visitsPerDay)
-
-  // 5. Lay out across the next 14 calendar days, Tue–Fri only
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // 4. Lay each day-bucket onto the next available workdays (Mon–Fri, skipping admin days)
+  const dates = nextWorkdays(clientsByDay.length, new Date(), blocked)
   const plan: DailyPlan[] = []
-  let dayIndex = 0
 
-  for (let i = 0; i < 14; i++) {
-    const date = new Date(today)
-    date.setDate(date.getDate() + i)
-    const dow = date.getDay()
+  clientsByDay.forEach((bucket, dayIndex) => {
+    const dateStr = dates[dayIndex]
+    const ordered = nnOrder(bucket, homeCoords)
+    const slots = buildTimeSlots(ordered.length)
+    const { legs, totalKm } = routeFromHome(ordered, homeCoords)
 
-    if (dow < 2 || dow > 5) continue   // Tue–Fri only
-    if (dayIndex >= clientsByDay.length) break
-
-    const dateStr    = toDateStr(date)
-    const dayClients = sortByProximity(clientsByDay[dayIndex], homeCoords)
-
-    const visits: VisitDay[] = dayClients.map((client, idx) => {
-      const p = coordOf(client)
-      const distance = p ? getDistance(homeCoords.lat, homeCoords.lon, p.lat, p.lon) : 0
-      return {
-        id:            `${dateStr}-${idx}`,
-        clientName:    client.clientName,
-        town:          client.town,
-        address:       client.address,
-        lat:           client.lat,
-        lon:           client.lon,
-        distance,
-        urgency:       client.urgency ?? 'ok',
-        timeSlot:      timeSlots[idx % timeSlots.length],
-        completed:     false,
-        notes:         '',
-        quality:       client.quality ?? 7,
-        lastVisitDays: client.lastVisitDays,
-      }
-    })
+    const visits: VisitDay[] = ordered.map((client, idx) => ({
+      id:            `${dateStr}-${idx}`,
+      clientName:    client.clientName,
+      town:          client.town,
+      address:       client.address,
+      lat:           client.lat,
+      lon:           client.lon,
+      distance:      legs[idx] ?? 0,
+      urgency:       client.urgency ?? 'ok',
+      timeSlot:      slots[idx % slots.length],
+      completed:     false,
+      notes:         '',
+      quality:       client.quality ?? 7,
+      lastVisitDays: client.lastVisitDays,
+    }))
 
     if (visits.length > 0) {
-      plan.push({
-        date:    dateStr,
-        visits,
-        totalKm: Math.round(visits.reduce((s, v) => s + v.distance, 0) * 10) / 10,
-      })
+      plan.push({ date: dateStr, visits, totalKm })
     }
-
-    dayIndex++
-  }
+  })
 
   return plan
+}
+
+/**
+ * Recompute a day's derived fields after a manual edit (reorder / move / remove):
+ * re-sequence time slots, recompute per-leg distances and the day's total km.
+ * `reoptimize` re-routes the day from home (used when a visit is moved in);
+ * leave it false to preserve a manual ordering. Visit ids are kept intact so
+ * notes / completion / voice notes stay linked.
+ */
+export function recomputeDay(
+  visits: VisitDay[],
+  homeCoords: Pt,
+  reoptimize = false
+): { visits: VisitDay[]; totalKm: number } {
+  const ordered = reoptimize ? nnOrder(visits, homeCoords) : visits
+  const slots = buildTimeSlots(ordered.length)
+  const { legs, totalKm } = routeFromHome(ordered, homeCoords)
+  const out = ordered.map((v, i) => ({
+    ...v,
+    timeSlot: slots[i % slots.length],
+    distance: legs[i] ?? 0,
+  }))
+  return { visits: out, totalKm }
+}
+
+/**
+ * Re-date a saved plan onto upcoming workdays, preserving day grouping, visit
+ * order and ids (i.e. manual edits). Used to "roll forward" a plan whose dates
+ * have drifted into the past, and to reflow around admin days (`blocked`).
+ */
+export function rollForwardDates(plan: DailyPlan[], from: Date = new Date(), blocked?: Set<string>): DailyPlan[] {
+  if (!plan.length) return plan
+  const dates = nextWorkdays(plan.length, from, blocked)
+  return plan.map((day, i) => ({ ...day, date: dates[i] }))
 }
 
 export function generatePlan(
   clients: Client[],
   homeCoords: Pt,
-  visitsPerDay: number = 7
+  visitsPerDay: number = 7,
+  blocked?: Set<string>
 ): DailyPlan[] {
-  return buildPlan(clients, homeCoords, visitsPerDay)
+  return buildPlan(clients, homeCoords, visitsPerDay, blocked)
 }
 
 /**
@@ -120,13 +180,14 @@ export function planAreaCoverage(
   center: Pt,
   radiusKm: number,
   homeCoords: Pt,
-  visitsPerDay: number = 7
+  visitsPerDay: number = 7,
+  blocked?: Set<string>
 ): { plan: DailyPlan[]; count: number } {
   const inArea = clients.filter(c => {
     const p = coordOf(c)
     return p ? getDistance(center.lat, center.lon, p.lat, p.lon) <= radiusKm : false
   })
-  return { plan: buildPlan(inArea, homeCoords, visitsPerDay), count: inArea.length }
+  return { plan: buildPlan(inArea, homeCoords, visitsPerDay, blocked), count: inArea.length }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -143,33 +204,6 @@ function groupByDay(clients: Client[], perDay: number): Client[][] {
     days.push(clients.slice(i, i + perDay))
   }
   return days
-}
-
-/** Nearest-neighbour order within a day, starting from home. */
-function sortByProximity(clients: Client[], homeCoords: Pt): Client[] {
-  if (clients.length <= 1) return clients
-
-  const remaining = [...clients]
-  const ordered: Client[] = []
-  let cur: Pt = { lat: homeCoords.lat, lon: homeCoords.lon }
-
-  while (remaining.length > 0) {
-    let idx = 0
-    let best = Infinity
-    remaining.forEach((c, i) => {
-      const p = coordOf(c)
-      if (p) {
-        const d = getDistance(cur.lat, cur.lon, p.lat, p.lon)
-        if (d < best) { best = d; idx = i }
-      }
-    })
-    const next = remaining.splice(idx, 1)[0]
-    ordered.push(next)
-    const np = coordOf(next)
-    if (np) cur = np
-  }
-
-  return ordered
 }
 
 /** Time slots across 09–12 and 14–17, distributed evenly */

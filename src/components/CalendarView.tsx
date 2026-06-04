@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import { ChevronLeft, ChevronRight, X, GripVertical } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, GripVertical, Briefcase } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { VisitDay } from '../types'
-import { toDateStr, todayStr as getTodayStr, formatDateLabel } from '../utils/date'
+import { toDateStr, todayStr as getTodayStr, formatDateLabel, isWorkday as isWorkdayDate } from '../utils/date'
 
 interface CalendarViewProps {
   plan: any[]
@@ -14,6 +14,9 @@ interface CalendarViewProps {
   onMoveVisit?: (visit: VisitDay, fromDate: string, toDate: string) => void
   onReorderVisit?: (date: string, draggedId: string, targetId: string) => void
   onUpdateVisit?: (visit: VisitDay) => void
+  visitsPerDay?: number
+  adminDays?: Set<string>
+  onToggleAdminDay?: (date: string) => void
 }
 
 export function CalendarView({
@@ -26,6 +29,9 @@ export function CalendarView({
   onMoveVisit,
   onReorderVisit,
   onUpdateVisit,
+  visitsPerDay = 7,
+  adminDays,
+  onToggleAdminDay,
 }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
@@ -65,11 +71,8 @@ export function CalendarView({
 
   const todayStr = getTodayStr()
 
-  const isWorkday = (day: number) => {
-    const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-    const dayOfWeek = date.getDay()
-    return dayOfWeek >= 2 && dayOfWeek <= 5 // Tuesday to Friday
-  }
+  const isWorkday = (day: number) =>
+    isWorkdayDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day))
 
   const isPast = (day: number) => {
     const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
@@ -181,6 +184,23 @@ export function CalendarView({
           const past = isPast(day)
           const workday = isWorkday(day)
 
+          // Visit summary for the day badge
+          const urgentN = visits.filter(v => v.urgency === 'urgent').length
+          const attentionN = visits.filter(v => v.urgency === 'attention').length
+          const okN = visits.length - urgentN - attentionN
+          const worst = urgentN > 0 ? 'urgent' : attentionN > 0 ? 'attention' : 'ok'
+          const over = visits.length > visitsPerDay
+          const isAdmin = !!adminDays?.has(dateStr)
+          const isDropTarget = !!draggedVisit && draggedVisit.fromDate !== dateStr && active && !isAdmin
+          const badgeColor =
+            worst === 'urgent' ? 'bg-red-500' : worst === 'attention' ? 'bg-amber-500' : 'bg-green-500'
+          const breakdown =
+            `${visits.length} visit${visits.length === 1 ? '' : 's'}` +
+            (urgentN ? ` · ${urgentN} urgent` : '') +
+            (attentionN ? ` · ${attentionN} attention` : '') +
+            (okN ? ` · ${okN} ok` : '') +
+            (over ? ` · over capacity (${visitsPerDay}/day)` : '')
+
           return (
             <motion.button
               key={day}
@@ -188,54 +208,53 @@ export function CalendarView({
               whileHover={active ? { scale: 1.05 } : {}}
               whileTap={active ? { scale: 0.95 } : {}}
               onClick={() => active && onDateSelect(dateStr)}
+              onDragOver={(e) => { if (isDropTarget) e.preventDefault() }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (draggedVisit && onMoveVisit && draggedVisit.fromDate !== dateStr) {
+                  onMoveVisit(draggedVisit.visit, draggedVisit.fromDate, dateStr)
+                  setDraggedVisit(null)
+                }
+              }}
               className={`relative p-1 sm:p-3 rounded-lg transition-all duration-300 min-h-[36px] sm:min-h-0 ${
                 isSelected
                   ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-500/50'
-                  : today
-                    ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-2 ring-indigo-500 text-indigo-900 dark:text-indigo-100'
-                    : active
-                      ? 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-50 cursor-pointer'
-                      : 'bg-slate-50 dark:bg-slate-800 text-slate-300 dark:text-slate-700 cursor-default'
+                  : isAdmin && active
+                    ? 'bg-slate-200 dark:bg-slate-600/50 text-slate-500 dark:text-slate-400 cursor-pointer'
+                    : today
+                      ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-2 ring-indigo-500 text-indigo-900 dark:text-indigo-100'
+                      : active
+                        ? 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-50 cursor-pointer'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-300 dark:text-slate-700 cursor-default'
+              } ${isDropTarget ? 'ring-2 ring-dashed ring-indigo-400' : ''} ${
+                over && !isAdmin ? 'ring-2 ring-amber-400' : ''
               }`}
               disabled={!active}
+              title={isAdmin ? 'Admin day — no visits scheduled' : visits.length > 0 ? breakdown : undefined}
             >
               <div className="text-xs sm:text-sm font-bold mb-0.5 sm:mb-1">{day}</div>
 
-              {/* Visit indicators */}
-              {visits.length > 0 && (
+              {/* Admin day marker */}
+              {isAdmin && (
+                <span className="inline-flex items-center justify-center px-1.5 h-[18px] sm:h-5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wide bg-slate-400/30 dark:bg-slate-500/30 text-slate-600 dark:text-slate-300">
+                  Admin
+                </span>
+              )}
+
+              {/* Visit count badge — colour reflects the most urgent visit that day */}
+              {!isAdmin && visits.length > 0 && (
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="flex flex-wrap gap-0.5 sm:gap-1"
+                  className="flex items-center justify-center gap-1"
                 >
-                  {visits.slice(0, 3).map((visit, idx) => (
-                    <motion.button
-                      key={visit.id}
-                      whileHover={{ scale: 1.2 }}
-                      onClick={() => onVisitClick?.(visit, dateStr)}
-                      draggable
-                      onDragStart={() => setDraggedVisit({ visit, fromDate: dateStr })}
-                      onDragEnd={() => setDraggedVisit(null)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault()
-                        if (draggedVisit && onMoveVisit) {
-                          onMoveVisit(draggedVisit.visit, draggedVisit.fromDate, dateStr)
-                          setDraggedVisit(null)
-                        }
-                      }}
-                      className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full cursor-grab active:cursor-grabbing transition-all ${
-                        visit.urgency === 'urgent'
-                          ? 'bg-red-500'
-                          : visit.urgency === 'attention'
-                            ? 'bg-amber-500'
-                            : 'bg-green-500'
-                      } ${draggedVisit?.visit.id === visit.id ? 'opacity-50' : ''}`}
-                      title={visit.clientName}
-                    />
-                  ))}
-                  {visits.length > 3 && (
-                    <span className="text-xs opacity-60">+{visits.length - 3}</span>
+                  <span
+                    className={`inline-flex items-center justify-center min-w-[18px] sm:min-w-[20px] h-[18px] sm:h-5 px-1 rounded-full text-[10px] sm:text-xs font-bold text-white ${badgeColor}`}
+                  >
+                    {visits.length}
+                  </span>
+                  {over && (
+                    <span className="text-[10px] sm:text-xs font-bold text-amber-500 leading-none">!</span>
                   )}
                 </motion.div>
               )}
@@ -253,9 +272,34 @@ export function CalendarView({
             exit={{ opacity: 0, y: -10 }}
             className="mt-4 sm:mt-6 p-3 sm:p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl w-full"
           >
-            <h3 className="font-bold text-slate-900 dark:text-slate-50 mb-3">
-              {formatDateLabel(selectedDate, { weekday: 'long', month: 'long', day: 'numeric' })}
-            </h3>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold text-slate-900 dark:text-slate-50">
+                {formatDateLabel(selectedDate, { weekday: 'long', month: 'long', day: 'numeric' })}
+              </h3>
+              {onToggleAdminDay && (
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => onToggleAdminDay(selectedDate)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors flex-shrink-0 ${
+                    adminDays?.has(selectedDate)
+                      ? 'bg-slate-600 text-white hover:bg-slate-700'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'
+                  }`}
+                  title="Admin days are skipped by the planner"
+                >
+                  <Briefcase className="h-3.5 w-3.5" />
+                  {adminDays?.has(selectedDate) ? 'Admin day ✓' : 'Mark as admin'}
+                </motion.button>
+              )}
+            </div>
+
+            {adminDays?.has(selectedDate) && (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                🗂️ Admin day — no visits are scheduled here. The planner reflows
+                visits onto the other workdays.
+              </p>
+            )}
 
             {(visitsByDate[selectedDate] || []).length > 0 ? (
               <div className="space-y-2">

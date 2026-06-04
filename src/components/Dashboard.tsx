@@ -7,6 +7,20 @@ interface DashboardProps {
   totalKm: number
   urgentCount: number
   attentionCount: number
+  planDays?: number
+  dateRangeLabel?: string
+}
+
+// Average field-driving speed (regional Belgian mix) used to estimate drive time.
+const AVG_SPEED_KMH = 60
+
+/** Estimated driving time from total km, formatted as "Xh Ym" / "Xm". */
+function driveTimeLabel(km: number): string {
+  const mins = Math.round((km / AVG_SPEED_KMH) * 60)
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 export function Dashboard({
@@ -14,6 +28,8 @@ export function Dashboard({
   totalKm,
   urgentCount,
   attentionCount,
+  planDays = 0,
+  dateRangeLabel = '',
 }: DashboardProps) {
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -35,6 +51,9 @@ export function Dashboard({
     {
       label: 'Total Visits',
       value: totalVisits,
+      sub: planDays > 0
+        ? `over ${planDays} work day${planDays === 1 ? '' : 's'}${dateRangeLabel ? ` · ${dateRangeLabel}` : ''}`
+        : undefined,
       icon: <CheckCircle2 className="h-6 w-6" />,
       gradient: 'from-blue-500/20 to-blue-600/20 dark:from-blue-500/10 dark:to-blue-600/10',
       borderColor: 'border-blue-200 dark:border-blue-800',
@@ -43,6 +62,7 @@ export function Dashboard({
     {
       label: 'Total Distance',
       value: `${totalKm} km`,
+      sub: totalKm > 0 ? `≈ ${driveTimeLabel(totalKm)} driving` : undefined,
       icon: <MapPin className="h-6 w-6" />,
       gradient: 'from-purple-500/20 to-purple-600/20 dark:from-purple-500/10 dark:to-purple-600/10',
       borderColor: 'border-purple-200 dark:border-purple-800',
@@ -51,6 +71,7 @@ export function Dashboard({
     {
       label: 'Urgent',
       value: urgentCount,
+      sub: undefined,
       icon: <AlertCircle className="h-6 w-6" />,
       gradient: 'from-red-500/20 to-red-600/20 dark:from-red-500/10 dark:to-red-600/10',
       borderColor: 'border-red-200 dark:border-red-800',
@@ -59,6 +80,7 @@ export function Dashboard({
     {
       label: 'Attention',
       value: attentionCount,
+      sub: undefined,
       icon: <AlertCircle className="h-6 w-6" />,
       gradient: 'from-amber-500/20 to-amber-600/20 dark:from-amber-500/10 dark:to-amber-600/10',
       borderColor: 'border-amber-200 dark:border-amber-800',
@@ -101,6 +123,12 @@ export function Dashboard({
           >
             {card.value}
           </motion.p>
+
+          {card.sub && (
+            <p className="mt-1 text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 leading-tight">
+              {card.sub}
+            </p>
+          )}
         </motion.div>
       ))}
     </motion.div>

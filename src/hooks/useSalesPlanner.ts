@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Client, DailyPlan, VisitDay } from '../types'
-import { generatePlan } from '../utils/planning'
+import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
+import { todayStr } from '../utils/date'
+import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { useLocalStorage } from './useLocalStorage'
 
 // One-time migration from the legacy combined 'salesPlannerState' blob to the
@@ -37,23 +39,65 @@ export function useSalesPlanner() {
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
 
+  // Admin days: workdays the rep spends on admin — no visits are scheduled there.
+  const [adminDaysArr, setAdminDaysArr] = useLocalStorage<string[]>('salesPlanner.adminDays', [])
+  const adminDays = useMemo(() => new Set(adminDaysArr), [adminDaysArr])
+
   // Persistent per-visit state — auto-saved to localStorage
   const [completedVisitsArr, setCompletedVisitsArr] = useLocalStorage<string[]>('completedVisits', [])
   const [notes, setNotes] = useLocalStorage<Record<string, string>>('visitNotes', {})
-  const [voiceNotes, setVoiceNotes] = useLocalStorage<Record<string, string>>('voiceNotes', {})
+
+  // Voice notes: audio blobs live in IndexedDB; this map holds object URLs for
+  // playback (visitId → blob: URL), rebuilt on mount.
+  const [voiceNotes, setVoiceNotes] = useState<Record<string, string>>({})
 
   // Expose completedVisits as a Set for efficient .has() checks
   const completedVisits = useMemo(() => new Set(completedVisitsArr), [completedVisitsArr])
+
+  // Load voice notes from IndexedDB on mount (migrating any legacy base64 notes
+  // out of localStorage first). Object URLs are revoked on unmount.
+  useEffect(() => {
+    const urls: string[] = []
+    let cancelled = false
+    ;(async () => {
+      try {
+        const legacy = window.localStorage.getItem('voiceNotes')
+        if (legacy) {
+          const map = JSON.parse(legacy) as Record<string, string>
+          for (const [id, dataUrl] of Object.entries(map)) {
+            try {
+              const blob = await (await fetch(dataUrl)).blob()
+              await putVoiceNote(id, blob)
+            } catch { /* skip bad entry */ }
+          }
+          window.localStorage.removeItem('voiceNotes')
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const blobs = await getAllVoiceNotes()
+        if (cancelled) return
+        const next: Record<string, string> = {}
+        for (const [id, blob] of Object.entries(blobs)) {
+          const u = URL.createObjectURL(blob)
+          urls.push(u)
+          next[id] = u
+        }
+        setVoiceNotes(next)
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true; urls.forEach(u => URL.revokeObjectURL(u)) }
+  }, [])
 
   const loadClients = useCallback((clients: Client[]) => {
     setData(clients)
     setFilter('all')
     const homeCoords = getCityCoordinates(homeAddress)
     if (homeCoords) {
-      const newPlan = generatePlan(clients, homeCoords, visitsPerDay)
+      const newPlan = generatePlan(clients, homeCoords, visitsPerDay, adminDays)
       setPlan(newPlan)
     }
-  }, [homeAddress, visitsPerDay])
+  }, [homeAddress, visitsPerDay, adminDays])
 
   // Clear all loaded clients and the plan (also wipes persisted copies).
   const clearAll = useCallback(() => {
@@ -72,14 +116,32 @@ export function useSalesPlanner() {
       // (fresh data, migrated legacy state, or a cleared plan).
       if (data.length > 0 && plan.length === 0) {
         const homeCoords = getCityCoordinates(homeAddress)
-        if (homeCoords) setPlan(generatePlan(data, homeCoords, visitsPerDay))
+        if (homeCoords) setPlan(generatePlan(data, homeCoords, visitsPerDay, adminDays))
+      } else if (plan.length > 0) {
+        // Refresh a restored plan: roll dates forward if they've drifted into
+        // the past, and recompute route metrics (so older saved plans pick up
+        // real leg distances). Order and ids — i.e. manual edits — are kept.
+        const homeCoords = getCityCoordinates(homeAddress)
+        const drifted = plan[0].date < todayStr()
+        if (drifted || homeCoords) {
+          setPlan(prev => {
+            let next = drifted ? rollForwardDates(prev, new Date(), adminDays) : prev
+            if (homeCoords) {
+              next = next.map(day => {
+                const r = recomputeDay(day.visits, homeCoords, false)
+                return { ...day, visits: r.visits, totalKm: r.totalKm }
+              })
+            }
+            return next
+          })
+        }
       }
       return
     }
     if (data.length > 0) {
       const homeCoords = getCityCoordinates(homeAddress)
       if (homeCoords) {
-        const newPlan = generatePlan(data, homeCoords, visitsPerDay)
+        const newPlan = generatePlan(data, homeCoords, visitsPerDay, adminDays)
         setPlan(newPlan)
       }
     }
@@ -88,10 +150,20 @@ export function useSalesPlanner() {
   const regeneratePlan = useCallback(() => {
     const homeCoords = getCityCoordinates(homeAddress)
     if (homeCoords && data.length > 0) {
-      const newPlan = generatePlan(data, homeCoords, visitsPerDay)
+      const newPlan = generatePlan(data, homeCoords, visitsPerDay, adminDays)
       setPlan(newPlan)
     }
-  }, [data, homeAddress, visitsPerDay])
+  }, [data, homeAddress, visitsPerDay, adminDays])
+
+  // Mark/unmark a day as admin. Visits reflow onto the next free workdays,
+  // preserving order, ids and manual edits (no full regeneration).
+  const toggleAdminDay = useCallback((date: string) => {
+    const set = new Set(adminDaysArr)
+    if (set.has(date)) set.delete(date)
+    else set.add(date)
+    setAdminDaysArr(Array.from(set))
+    setPlan(prev => rollForwardDates(prev, new Date(), set))
+  }, [adminDaysArr, setAdminDaysArr, setPlan])
 
   const toggleComplete = useCallback((visitId: string) => {
     setCompletedVisitsArr(prev => {
@@ -109,20 +181,22 @@ export function useSalesPlanner() {
   const saveVoiceNote = useCallback((visitId: string, blob: Blob) => {
     if (!blob.size) {
       // Empty blob signals deletion
+      deleteVoiceNote(visitId).catch(() => {})
       setVoiceNotes(prev => {
         const next = { ...prev }
+        if (next[visitId]) URL.revokeObjectURL(next[visitId])
         delete next[visitId]
         return next
       })
       return
     }
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64 = reader.result as string
-      setVoiceNotes(prev => ({ ...prev, [visitId]: base64 }))
-    }
-    reader.readAsDataURL(blob)
-  }, [setVoiceNotes])
+    putVoiceNote(visitId, blob).catch(() => {})
+    const url = URL.createObjectURL(blob)
+    setVoiceNotes(prev => {
+      if (prev[visitId]) URL.revokeObjectURL(prev[visitId])
+      return { ...prev, [visitId]: url }
+    })
+  }, [])
 
   const getFilteredPlan = useCallback((): DailyPlan[] => {
     if (filter === 'all') return plan
@@ -139,9 +213,9 @@ export function useSalesPlanner() {
     let attentionCount = 0
 
     plan.forEach(day => {
+      totalKm += day.totalKm   // real per-day route km (incl. return home)
       day.visits.forEach(v => {
         totalVisits++
-        totalKm += v.distance
         if (v.urgency === 'urgent') urgentCount++
         else if (v.urgency === 'attention') attentionCount++
       })
@@ -166,31 +240,43 @@ export function useSalesPlanner() {
 
       if (!visitToMove) return prev
 
+      const home = getCityCoordinates(homeAddress)
+      const apply = (day: DailyPlan, visits: VisitDay[], reoptimize: boolean): DailyPlan => {
+        if (!home) return { ...day, visits }
+        const r = recomputeDay(visits, home, reoptimize)
+        return { ...day, visits: r.visits, totalKm: r.totalKm }
+      }
+
       return prev.map(day => {
         if (day.date === fromDate) {
-          return { ...day, visits: day.visits.filter(v => v.id !== visitId) }
+          return apply(day, day.visits.filter(v => v.id !== visitId), false)
         }
         if (day.date === toDate) {
-          return { ...day, visits: [...day.visits, visitToMove!] }
+          // Re-optimise the destination day so the inserted visit lands in route order.
+          return apply(day, [...day.visits, visitToMove!], true)
         }
         return day
       })
     })
-  }, [])
+  }, [homeAddress])
 
   const removeVisit = useCallback((date: string, visitId: string) => {
+    const home = getCityCoordinates(homeAddress)
     setPlan(prev =>
-      prev.map(day =>
-        day.date === date
-          ? { ...day, visits: day.visits.filter(v => v.id !== visitId) }
-          : day
-      )
+      prev.map(day => {
+        if (day.date !== date) return day
+        const visits = day.visits.filter(v => v.id !== visitId)
+        if (!home) return { ...day, visits }
+        const r = recomputeDay(visits, home, false)
+        return { ...day, visits: r.visits, totalKm: r.totalKm }
+      })
     )
-  }, [])
+  }, [homeAddress])
 
   // Reorder a visit within the same day by dropping it onto another visit's slot.
   const reorderVisit = useCallback((date: string, draggedId: string, targetId: string) => {
     if (draggedId === targetId) return
+    const home = getCityCoordinates(homeAddress)
     setPlan(prev =>
       prev.map(day => {
         if (day.date !== date) return day
@@ -200,10 +286,13 @@ export function useSalesPlanner() {
         if (from === -1 || to === -1) return day
         const [moved] = visits.splice(from, 1)
         visits.splice(to, 0, moved)
-        return { ...day, visits }
+        // Keep the user's chosen order, just re-sequence times/distances.
+        if (!home) return { ...day, visits }
+        const r = recomputeDay(visits, home, false)
+        return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
-  }, [])
+  }, [homeAddress])
 
   const updateVisit = useCallback((date: string, updatedVisit: VisitDay) => {
     setPlan(prev =>
@@ -230,6 +319,8 @@ export function useSalesPlanner() {
     voiceNotes,
     showSettings,
     darkMode,
+    adminDays,
+    toggleAdminDay,
     loadClients,
     clearAll,
     regeneratePlan,

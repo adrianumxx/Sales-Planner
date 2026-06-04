@@ -26,6 +26,36 @@ export function todayStr(): string {
   return toDateStr(new Date())
 }
 
+/**
+ * Field-rep work week: Monday–Friday. Single source of truth — both the
+ * planner (date layout) and the calendar (active cells) must agree on this.
+ * (Mondays are workdays but are often used for admin — see admin-day marking.)
+ */
+export function isWorkday(d: Date): boolean {
+  const dow = d.getDay()
+  return dow >= 1 && dow <= 5
+}
+
+/**
+ * The next `count` workday date-strings, starting at/after `from` (default today).
+ * Dates present in `blocked` (e.g. admin days) are skipped.
+ */
+export function nextWorkdays(count: number, from: Date = new Date(), blocked?: Set<string>): string[] {
+  const out: string[] = []
+  const d = new Date(from)
+  d.setHours(0, 0, 0, 0)
+  const guard = new Date(d)
+  guard.setFullYear(guard.getFullYear() + 2) // safety bound
+  while (out.length < count && d < guard) {
+    if (isWorkday(d)) {
+      const s = toDateStr(d)
+      if (!blocked || !blocked.has(s)) out.push(s)
+    }
+    d.setDate(d.getDate() + 1)
+  }
+  return out
+}
+
 /** Format a `YYYY-MM-DD` string for display, in local time. */
 export function formatDateLabel(
   str: string,
