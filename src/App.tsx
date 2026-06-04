@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Menu, Download, FileDown, Calendar, LogOut } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { FileUpload } from './components/FileUpload'
 import { Dashboard } from './components/Dashboard'
 import { PlanViewer } from './components/PlanViewer'
@@ -10,13 +10,13 @@ import { LoginPage } from './components/LoginPage'
 import { FileManager } from './components/FileManager'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { EditVisitModal } from './components/EditVisitModal'
+import { CommandBar } from './components/CommandBar'
 import { useSalesPlanner } from './hooks/useSalesPlanner'
 import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar } from './utils/export'
-import { getCityCoordinates } from './utils/geo'
 import { useFileParser } from './hooks/useFileParser'
-import type { VisitDay } from './types'
+import type { VisitDay, DailyPlan } from './types'
 
 function App() {
   const { user, loading: authLoading, error: authError, login, logout, signup, checkEmailExists, isAuthenticated } = useAuth()
@@ -97,6 +97,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const planner = useSalesPlanner()
   const { parseFile } = useFileParser()
   const [editingVisit, setEditingVisit] = useState<{ visit: VisitDay; date: string } | null>(null)
+  const [commandResult, setCommandResult] = useState<{ label: string; days: DailyPlan[]; totalVisits: number } | null>(null)
 
   // Clean up old localStorage keys that might interfere
   useEffect(() => {
@@ -277,6 +278,28 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 onFilterChange={planner.setFilter}
               />
 
+              {/* Command Bar */}
+              {viewMode === 'list' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+                  <CommandBar plan={planner.plan} onResult={setCommandResult} />
+                </motion.div>
+              )}
+
+              {/* Command result banner */}
+              <AnimatePresence>
+                {commandResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-xl text-sm text-indigo-700 dark:text-indigo-300"
+                  >
+                    <span className="font-semibold">✨ {commandResult.totalVisits} visite</span>
+                    <span className="opacity-60">per "{commandResult.label}"</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* View Mode Toggle */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -323,7 +346,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                   transition={{ delay: 0.2 }}
                 >
                   <PlanViewer
-                    plan={filteredPlan}
+                    plan={commandResult ? commandResult.days : filteredPlan}
                     completedVisits={planner.completedVisits}
                     notes={planner.notes}
                     visitTimerStates={planner.visitTimerStates}

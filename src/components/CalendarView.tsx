@@ -24,7 +24,10 @@ export function CalendarView({
   onMoveVisit,
   onUpdateVisit,
 }: CalendarViewProps) {
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 5)) // June 2026
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth())
+  })
   const [draggedVisit, setDraggedVisit] = useState<{ visit: VisitDay; fromDate: string } | null>(null)
 
   const getDaysInMonth = (date: Date) => {
@@ -59,10 +62,31 @@ export function CalendarView({
       .split('T')[0]
   }
 
+  const todayStr = new Date().toISOString().split('T')[0]
+
   const isWorkday = (day: number) => {
     const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
     const dayOfWeek = date.getDay()
     return dayOfWeek >= 2 && dayOfWeek <= 5 // Tuesday to Friday
+  }
+
+  const isPast = (day: number) => {
+    const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+    date.setHours(0, 0, 0, 0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return date < today
+  }
+
+  const isToday = (day: number) => {
+    return getDateString(day) === todayStr
+  }
+
+  // A day is interactive if it's a workday, not in the past, and has visits OR is today
+  const isActive = (day: number) => {
+    if (!isWorkday(day)) return false
+    if (isPast(day)) return false
+    return true
   }
 
   const getVisitsForDate = (day: number) => {
@@ -151,23 +175,28 @@ export function CalendarView({
           const dateStr = getDateString(day)
           const visits = getVisitsForDate(day)
           const isSelected = selectedDate === dateStr
-          const isWorkday_ = isWorkday(day)
+          const active = isActive(day)
+          const today = isToday(day)
+          const past = isPast(day)
+          const workday = isWorkday(day)
 
           return (
             <motion.button
               key={day}
               variants={dayVariants}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onDateSelect(dateStr)}
+              whileHover={active ? { scale: 1.05 } : {}}
+              whileTap={active ? { scale: 0.95 } : {}}
+              onClick={() => active && onDateSelect(dateStr)}
               className={`relative p-1 sm:p-3 rounded-lg transition-all duration-300 min-h-[36px] sm:min-h-0 ${
                 isSelected
                   ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-500/50'
-                  : isWorkday_
-                    ? 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-50'
-                    : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                  : today
+                    ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-2 ring-indigo-500 text-indigo-900 dark:text-indigo-100'
+                    : active
+                      ? 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-50 cursor-pointer'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-300 dark:text-slate-700 cursor-default'
               }`}
-              disabled={!isWorkday_}
+              disabled={!active}
             >
               <div className="text-xs sm:text-sm font-bold mb-0.5 sm:mb-1">{day}</div>
 
