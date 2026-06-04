@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, GripVertical } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { VisitDay } from '../types'
 
@@ -9,6 +9,9 @@ interface CalendarViewProps {
   selectedDate: string | null
   visitsByDate: Record<string, VisitDay[]>
   onRemoveVisit: (date: string, visitId: string) => void
+  onVisitClick?: (visit: VisitDay, date: string) => void
+  onMoveVisit?: (visit: VisitDay, fromDate: string, toDate: string) => void
+  onUpdateVisit?: (visit: VisitDay) => void
 }
 
 export function CalendarView({
@@ -17,8 +20,12 @@ export function CalendarView({
   selectedDate,
   visitsByDate,
   onRemoveVisit,
+  onVisitClick,
+  onMoveVisit,
+  onUpdateVisit,
 }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date(2026, 5)) // June 2026
+  const [draggedVisit, setDraggedVisit] = useState<{ visit: VisitDay; fromDate: string } | null>(null)
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
@@ -169,16 +176,28 @@ export function CalendarView({
                   className="flex flex-wrap gap-1"
                 >
                   {visits.slice(0, 3).map((visit, idx) => (
-                    <motion.div
+                    <motion.button
                       key={visit.id}
                       whileHover={{ scale: 1.2 }}
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      onClick={() => onVisitClick?.(visit, dateStr)}
+                      draggable
+                      onDragStart={() => setDraggedVisit({ visit, fromDate: dateStr })}
+                      onDragEnd={() => setDraggedVisit(null)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        if (draggedVisit && onMoveVisit) {
+                          onMoveVisit(draggedVisit.visit, draggedVisit.fromDate, dateStr)
+                          setDraggedVisit(null)
+                        }
+                      }}
+                      className={`w-2 h-2 rounded-full cursor-grab active:cursor-grabbing transition-all ${
                         visit.urgency === 'urgent'
                           ? 'bg-red-500'
                           : visit.urgency === 'attention'
                             ? 'bg-amber-500'
                             : 'bg-green-500'
-                      }`}
+                      } ${draggedVisit?.visit.id === visit.id ? 'opacity-50' : ''}`}
                       title={visit.clientName}
                     />
                   ))}
@@ -217,16 +236,32 @@ export function CalendarView({
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 10 }}
-                    className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-lg text-sm"
+                    draggable
+                    onDragStart={() => setDraggedVisit({ visit, fromDate: selectedDate })}
+                    onDragEnd={() => setDraggedVisit(null)}
+                    className={`flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-lg text-sm cursor-grab active:cursor-grabbing transition-all ${
+                      draggedVisit?.visit.id === visit.id ? 'opacity-50' : ''
+                    }`}
                   >
-                    <span className="font-medium text-slate-900 dark:text-slate-50">
-                      {visit.clientName.substring(0, 30)}...
-                    </span>
+                    <div className="flex items-center gap-2 flex-1">
+                      <GripVertical className="h-4 w-4 text-slate-400" />
+                      <button
+                        onClick={() => onVisitClick?.(visit, selectedDate)}
+                        className="flex-1 text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      >
+                        <span className="font-medium text-slate-900 dark:text-slate-50">
+                          {visit.clientName.substring(0, 25)}
+                        </span>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {visit.timeSlot} • {visit.distance}km
+                        </div>
+                      </button>
+                    </div>
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
                       onClick={() => onRemoveVisit(selectedDate, visit.id)}
-                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
+                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
                     >
                       <X className="h-4 w-4 text-red-600 dark:text-red-400" />
                     </motion.button>
