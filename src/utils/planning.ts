@@ -60,15 +60,17 @@ export function generatePlan(
     const dayClients = sortByProximity(clientsByDay[dayIndex])
 
     const visits: VisitDay[] = dayClients.map((client, idx) => ({
-      id:         `${dateStr}-${idx}`,
-      clientName: client.clientName,
-      town:       client.town,
-      distance:   getDistanceFromHome(client.town, homeCoords),
-      urgency:    client.urgency ?? 'ok',
-      timeSlot:   timeSlots[idx % timeSlots.length],
-      completed:  false,
-      notes:      '',
-      quality:    client.quality ?? 7,
+      id:            `${dateStr}-${idx}`,
+      clientName:    client.clientName,
+      town:          client.town,
+      address:       client.address,
+      distance:      getDistanceFromHome(client.town, homeCoords),
+      urgency:       client.urgency ?? 'ok',
+      timeSlot:      timeSlots[idx % timeSlots.length],
+      completed:     false,
+      notes:         '',
+      quality:       client.quality ?? 7,
+      lastVisitDays: client.lastVisitDays,
     }))
 
     if (visits.length > 0) {

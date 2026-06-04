@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { CheckCircle2, Circle, MapPin, Clock, Edit2 } from 'lucide-react'
+import { CheckCircle2, Circle, MapPin, Clock, Edit2, ExternalLink, History } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
@@ -286,17 +286,45 @@ function VisitRow({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="flex flex-wrap gap-4 mb-3 text-sm text-slate-600 dark:text-slate-400"
+            className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2 text-sm text-slate-600 dark:text-slate-400"
           >
-            <div className="flex items-center gap-1 bg-blue-50/50 dark:bg-blue-900/20 px-3 py-1 rounded-lg">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                visit.address ? `${visit.clientName}, ${visit.address}` : `${visit.clientName}, ${visit.town}, Belgium`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-1 rounded-lg transition-colors"
+              title="Apri in Google Maps"
+            >
               <MapPin className="h-4 w-4" />
-              {visit.town} ({visit.distance} km)
-            </div>
-            <div className="flex items-center gap-1 bg-purple-50/50 dark:bg-purple-900/20 px-3 py-1 rounded-lg">
+              <span className="font-medium text-slate-700 dark:text-slate-300">{visit.town}</span>
+              {visit.distance > 0 && <span className="opacity-60">({visit.distance} km)</span>}
+              <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+            </a>
+
+            <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 px-3 py-1 rounded-lg">
               <Clock className="h-4 w-4" />
               {visit.timeSlot}
             </div>
+
+            {visit.lastVisitDays != null && visit.lastVisitDays > 0 && (
+              <div
+                className="flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 px-3 py-1 rounded-lg"
+                title="Giorni dall'ultima visita"
+              >
+                <History className="h-4 w-4" />
+                {visit.lastVisitDays}g fa
+              </div>
+            )}
           </motion.div>
+
+          {/* Address line */}
+          {visit.address && (
+            <p className="text-xs text-slate-400 dark:text-slate-500 mb-3 pl-1 truncate">
+              {visit.address}
+            </p>
+          )}
 
           {/* Notes & Voice */}
           <motion.div
