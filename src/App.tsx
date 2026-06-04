@@ -20,11 +20,6 @@ function App() {
   const { user, loading: authLoading, error: authError, login, logout, signup, checkEmailExists, isAuthenticated } = useAuth()
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loginLoading, setLoginLoading] = useState(false)
-  const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
-  const planner = useSalesPlanner()
 
   // Handle email check
   const handleCheckEmail = async (email: string) => {
@@ -83,6 +78,22 @@ function App() {
       </div>
     )
   }
+
+  // Authenticated content (user is guaranteed to exist here)
+  return <AppContent user={user!} onLogout={handleLogout} />
+}
+
+interface AppContentProps {
+  user: { id: string; email: string; user_metadata?: Record<string, any> }
+  onLogout: () => Promise<void>
+}
+
+function AppContent({ user, onLogout }: AppContentProps) {
+  const [savedState, setSavedState] = useLocalStorage('salesPlannerState', null as any)
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
+  const planner = useSalesPlanner()
 
   // Load saved state on mount
   useEffect(() => {
@@ -162,7 +173,7 @@ function App() {
             <div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                {user?.email} • 90-day sales visit planner
+                {user.email} • 90-day sales visit planner
               </p>
             </div>
 
@@ -235,7 +246,7 @@ function App() {
               </button>
 
               <button
-                onClick={handleLogout}
+                onClick={onLogout}
                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
                 title="Logout"
               >
