@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { ChevronLeft, ChevronRight, X, GripVertical } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { VisitDay } from '../types'
+import { toDateStr, todayStr as getTodayStr, formatDateLabel } from '../utils/date'
 
 interface CalendarViewProps {
   plan: any[]
@@ -57,12 +58,10 @@ export function CalendarView({
   }
 
   const getDateString = (day: number) => {
-    return new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-      .toISOString()
-      .split('T')[0]
+    return toDateStr(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day))
   }
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = getTodayStr()
 
   const isWorkday = (day: number) => {
     const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
@@ -253,16 +252,12 @@ export function CalendarView({
             className="mt-4 sm:mt-6 p-3 sm:p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl w-full"
           >
             <h3 className="font-bold text-slate-900 dark:text-slate-50 mb-3">
-              {new Date(selectedDate).toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-              })}
+              {formatDateLabel(selectedDate, { weekday: 'long', month: 'long', day: 'numeric' })}
             </h3>
 
-            {getVisitsForDate(parseInt(selectedDate.split('-')[2])).length > 0 ? (
+            {(visitsByDate[selectedDate] || []).length > 0 ? (
               <div className="space-y-2">
-                {getVisitsForDate(parseInt(selectedDate.split('-')[2])).map((visit) => (
+                {(visitsByDate[selectedDate] || []).map((visit) => (
                   <motion.div
                     key={visit.id}
                     initial={{ opacity: 0, x: -10 }}

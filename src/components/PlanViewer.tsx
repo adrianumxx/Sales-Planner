@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, MapPin, Clock, Edit2, ExternalLink, History } fro
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
+import { formatDateLabel } from '../utils/date'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 import { VisitTimer } from './VisitTimer'
 
@@ -98,11 +99,7 @@ export function PlanViewer({
                   animate={{ opacity: 1 }}
                   className="font-bold text-sm sm:text-lg text-slate-900 dark:text-slate-50"
                 >
-                  {new Date(day.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {formatDateLabel(day.date)}
                 </motion.h3>
                 <motion.div
                   initial={{ opacity: 0 }}

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan } from '../types'
 import { getCityCoordinates } from '../utils/geo'
 import { rerouteDayFromCity } from '../utils/planning'
+import { toDateStr, parseLocalDate } from '../utils/date'
 
 export interface CommandResult {
   label: string
@@ -20,8 +21,8 @@ interface CommandBarProps {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const TODAY    = new Date().toISOString().split('T')[0]
-const TOMORROW = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+const TODAY    = toDateStr(new Date())
+const TOMORROW = toDateStr(new Date(Date.now() + 86400000))
 
 const DAY_NAMES: Record<string, number> = {
   domenica: 0, sunday: 0, dim: 0,
@@ -76,15 +77,15 @@ function parseQuery(raw: string, plan: DailyPlan[]): CommandResult | null {
   } else if (words.some(w => ['domani', 'demain', 'tomorrow'].includes(w))) {
     days = days.filter(d => d.date === TOMORROW)
   } else if (words.some(w => ['settimana', 'semaine', 'week'].includes(w))) {
-    const weekEnd = new Date(TODAY)
+    const weekEnd = parseLocalDate(TODAY)
     weekEnd.setDate(weekEnd.getDate() + 7)
-    const weekEndStr = weekEnd.toISOString().split('T')[0]
+    const weekEndStr = toDateStr(weekEnd)
     days = days.filter(d => d.date >= TODAY && d.date <= weekEndStr)
   } else {
     for (const word of words) {
       if (word in DAY_NAMES) {
         const targetDow = DAY_NAMES[word]
-        days = days.filter(d => new Date(d.date).getDay() === targetDow)
+        days = days.filter(d => parseLocalDate(d.date).getDay() === targetDow)
         break
       }
     }
