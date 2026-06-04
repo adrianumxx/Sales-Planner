@@ -23,6 +23,7 @@ export function useSalesPlanner() {
 
   const loadClients = useCallback((clients: Client[]) => {
     setData(clients)
+    setFilter('all') // always reset filter on new file load
     const homeCoords = getCityCoordinates(homeAddress)
     if (homeCoords) {
       const newPlan = generatePlan(clients, homeCoords, visitsPerDay)

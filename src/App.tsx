@@ -267,7 +267,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 className="flex gap-3 items-center justify-between"
               >
                 <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">
-                  {viewMode === 'list' ? '90-Day Plan' : 'Calendar View'}
+                  {viewMode === 'list' ? '2-Week Plan' : 'Calendar View'}
                 </h2>
                 <div className="flex gap-2">
                   <motion.button
@@ -345,16 +345,6 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 </motion.div>
               )}
 
-              {/* Upload Another File */}
-              <button
-                onClick={() => {
-                  planner.data.length = 0 // Clear data
-                  window.location.reload()
-                }}
-                className="w-full py-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-600 dark:hover:border-indigo-400 transition"
-              >
-                Upload Another File
-              </button>
             </>
           )}
         </div>
