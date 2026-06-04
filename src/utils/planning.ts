@@ -1,5 +1,6 @@
 import type { Client, DailyPlan, VisitDay, CityCoord } from '../types'
 import { getDistanceFromHome, getCityCoordinates, getDistance } from './geo'
+import { toDateStr } from './date'
 
 // Urgency thresholds (days since last visit)
 const URGENT_DAYS    = 90  // 3+ months → top priority
@@ -56,7 +57,7 @@ export function generatePlan(
     if (dow < 2 || dow > 5) continue   // skip Mon, Sat, Sun
     if (dayIndex >= clientsByDay.length) break
 
-    const dateStr    = date.toISOString().split('T')[0]
+    const dateStr    = toDateStr(date)
     const dayClients = sortByProximity(clientsByDay[dayIndex])
 
     const visits: VisitDay[] = dayClients.map((client, idx) => ({
