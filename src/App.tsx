@@ -37,7 +37,7 @@ function App() {
     const success = await login(email, password)
     setLoginLoading(false)
     if (!success) {
-      setLoginError('Credenziali non valide o errore di connessione')
+      setLoginError('Invalid credentials or connection error')
     }
     return success
   }
@@ -49,7 +49,7 @@ function App() {
     const success = await signup(email, password)
     setLoginLoading(false)
     if (!success) {
-      setLoginError('Errore durante la registrazione')
+      setLoginError('Sign-up failed')
     }
     return success
   }
@@ -195,7 +195,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
             <div>
               <h1 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
               <p className="hidden sm:block text-sm text-slate-500 dark:text-slate-400 mt-1">
-                {user.email} • copertura intelligente per zona e percorsi ottimizzati
+                {user.email} • smart area coverage & optimized routes
               </p>
             </div>
 
@@ -328,10 +328,10 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     }`}
                   >
                     <span className="font-semibold">
-                      {commandResult.type === 'area' ? '📍' : '✨'} {commandResult.totalVisits} visite
+                      {commandResult.type === 'area' ? '📍' : '✨'} {commandResult.totalVisits} visits
                     </span>
                     <span className="opacity-70">
-                      {commandResult.description ?? `per "${commandResult.label}"`}
+                      {commandResult.description ?? `for "${commandResult.label}"`}
                     </span>
                   </motion.div>
                 )}

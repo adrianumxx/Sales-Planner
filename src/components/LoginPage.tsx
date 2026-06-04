@@ -18,10 +18,10 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
   const [localError, setLocalError] = useState<string | null>(null)
 
   const validate = () => {
-    if (!email) return 'Inserisci una email'
-    if (!email.endsWith('@bacardi.com')) return 'Usa una email @bacardi.com'
-    if (!password) return 'Inserisci la password'
-    if (mode === 'signup' && password.length < 6) return 'Password minimo 6 caratteri'
+    if (!email) return 'Enter an email'
+    if (!email.endsWith('@bacardi.com')) return 'Use a @bacardi.com email'
+    if (!password) return 'Enter your password'
+    if (mode === 'signup' && password.length < 6) return 'Password must be at least 6 characters'
     return null
   }
 
@@ -33,10 +33,10 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
 
     if (mode === 'login') {
       const ok = await onLogin(email, password)
-      if (!ok && !error) setLocalError('Credenziali non valide')
+      if (!ok && !error) setLocalError('Invalid credentials')
     } else {
       const ok = await onSignup?.(email, password)
-      if (!ok && !error) setLocalError('Errore durante la registrazione')
+      if (!ok && !error) setLocalError('Sign-up failed')
     }
   }
 
@@ -56,7 +56,7 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
             <span className="text-3xl">📅</span>
           </div>
           <h1 className="text-2xl font-bold text-white">Sales Planner</h1>
-          <p className="text-slate-400 text-sm mt-1">Accesso riservato Bacardi</p>
+          <p className="text-slate-400 text-sm mt-1">Bacardi restricted access</p>
         </div>
 
         {/* Card */}
@@ -75,7 +75,7 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {m === 'login' ? 'Accedi' : 'Registrati'}
+                {m === 'login' ? 'Sign in' : 'Sign up'}
               </button>
             ))}
           </div>
@@ -107,7 +107,7 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder={mode === 'signup' ? 'Minimo 6 caratteri' : '••••••••'}
+                  placeholder={mode === 'signup' ? 'At least 6 characters' : '••••••••'}
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   className="w-full pl-9 pr-10 py-2.5 bg-slate-700/50 border border-slate-600 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                   disabled={loading}
@@ -149,15 +149,15 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
                 </motion.div>
               ) : mode === 'login' ? (
-                <><LogIn className="h-4 w-4" /> Accedi</>
+                <><LogIn className="h-4 w-4" /> Sign in</>
               ) : (
-                <><UserPlus className="h-4 w-4" /> Crea Account</>
+                <><UserPlus className="h-4 w-4" /> Create account</>
               )}
             </motion.button>
           </form>
         </div>
 
-        <p className="text-center text-xs text-slate-600 mt-5">🔒 Sessione sicura · Supabase Auth</p>
+        <p className="text-center text-xs text-slate-600 mt-5">🔒 Secure session · Supabase Auth</p>
       </motion.div>
     </div>
   )

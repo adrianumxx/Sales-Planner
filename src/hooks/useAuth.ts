@@ -51,7 +51,7 @@ export function useAuth() {
     setError(null)
     try {
       if (!email.endsWith('@bacardi.com')) {
-        setError('Solo email @bacardi.com sono autorizzate')
+        setError('Only @bacardi.com emails are authorized')
         return false
       }
       const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
@@ -75,7 +75,7 @@ export function useAuth() {
     setError(null)
     try {
       if (!email.endsWith('@bacardi.com')) {
-        setError('Solo email @bacardi.com sono autorizzate')
+        setError('Only @bacardi.com emails are authorized')
         return false
       }
       const { data, error: err } = await supabase.auth.signUp({

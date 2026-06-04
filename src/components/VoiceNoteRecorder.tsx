@@ -55,7 +55,7 @@ export function VoiceNoteRecorder({
       mediaRecorder.start()
       setIsRecording(true)
     } catch {
-      alert('Permesso microfono negato. Abilita nel browser.')
+      alert('Microphone permission denied. Enable it in your browser.')
     }
   }
 
@@ -129,7 +129,7 @@ export function VoiceNoteRecorder({
             className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs rounded-lg hover:shadow-md hover:shadow-red-500/40 transition-all"
           >
             <Mic className="h-3.5 w-3.5" />
-            Registra nota vocale
+            Record voice note
           </motion.button>
         )}
 
@@ -146,7 +146,7 @@ export function VoiceNoteRecorder({
             className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg animate-pulse"
           >
             <Square className="h-3.5 w-3.5" />
-            Registrazione in corso…
+            Recording…
           </motion.button>
         )}
 
@@ -171,14 +171,14 @@ export function VoiceNoteRecorder({
               whileTap={{ scale: 0.9 }}
               onClick={togglePlay}
               className="p-1.5 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors"
-              title={isPlaying ? 'Pausa' : 'Anteprima'}
+              title={isPlaying ? 'Pause' : 'Preview'}
             >
               {isPlaying
                 ? <Pause className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
                 : <Play className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
               }
             </motion.button>
-            <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">🎙️ Pronta</span>
+            <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">🎙️ Ready</span>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -186,7 +186,7 @@ export function VoiceNoteRecorder({
               className="px-2.5 py-1 text-xs bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1"
             >
               <Save className="h-3 w-3" />
-              Salva
+              Save
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -194,7 +194,7 @@ export function VoiceNoteRecorder({
               onClick={discardRecording}
               className="px-2.5 py-1 text-xs bg-slate-400 text-white rounded-lg hover:bg-slate-500 transition-colors"
             >
-              Scarta
+              Discard
             </motion.button>
           </motion.div>
         )}
@@ -220,20 +220,20 @@ export function VoiceNoteRecorder({
               whileTap={{ scale: 0.9 }}
               onClick={togglePlay}
               className="p-1.5 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors"
-              title={isPlaying ? 'Pausa' : 'Riproduci'}
+              title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying
                 ? <Pause className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
                 : <Play className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
               }
             </motion.button>
-            <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">🎙️ Nota vocale</span>
+            <span className="text-xs text-purple-600 dark:text-purple-400 flex-1">🎙️ Voice note</span>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={deleteExistingNote}
               className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-              title="Elimina nota vocale"
+              title="Delete voice note"
             >
               <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />
             </motion.button>

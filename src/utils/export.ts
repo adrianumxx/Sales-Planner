@@ -4,7 +4,7 @@ import type { DailyPlan } from '../types'
 import { formatDateLabel, toDateStr } from './date'
 
 export function exportToCSV(plan: DailyPlan[]): void {
-  const rows = [['Data', 'Cliente', 'Città', 'Distanza (km)', 'Urgenza', 'Ora', 'Completato', 'Note']]
+  const rows = [['Date', 'Client', 'Town', 'Distance (km)', 'Urgency', 'Time', 'Completed', 'Notes']]
 
   plan.forEach(day => {
     day.visits.forEach(visit => {
@@ -15,7 +15,7 @@ export function exportToCSV(plan: DailyPlan[]): void {
         visit.distance.toString(),
         visit.urgency,
         visit.timeSlot,
-        visit.completed ? 'Sì' : 'No',
+        visit.completed ? 'Yes' : 'No',
         visit.notes,
       ])
     })
@@ -51,8 +51,8 @@ X-WR-CALDESC:Sales visits planning calendar
       const startDt = `${year}${month}${date}T${hour}${minute}00`
       const endDt = `${year}${month}${date}T${String(parseInt(hour) + 1).padStart(2, '0')}${minute}00`
       const uid = `${day.date}-${visit.id}@salesplanner.local`
-      const summary = `Visita: ${visit.clientName} (${visit.town})`
-      const desc = `Cliente: ${visit.clientName}\\nCittà: ${visit.town}\\nDistanza: ${visit.distance}km\\nUrgenza: ${visit.urgency}\\nNote: ${visit.notes || 'N/A'}`
+      const summary = `Visit: ${visit.clientName} (${visit.town})`
+      const desc = `Client: ${visit.clientName}\\nTown: ${visit.town}\\nDistance: ${visit.distance}km\\nUrgency: ${visit.urgency}\\nNotes: ${visit.notes || 'N/A'}`
 
       ical += `BEGIN:VEVENT
 UID:${uid}
@@ -90,16 +90,16 @@ export function exportToPDF(plan: DailyPlan[]): void {
   // Title
   doc.setFontSize(18)
   doc.setTextColor(30, 30, 40)
-  doc.text('Piano Visite', 14, 18)
+  doc.text('Visit Plan', 14, 18)
   doc.setFontSize(10)
   doc.setTextColor(120, 120, 130)
   doc.text(
-    `Generato il ${new Date().toLocaleDateString('it-IT')}  ·  ${totalVisits} visite  ·  ${totalKm} km`,
+    `Generated ${new Date().toLocaleDateString('en-GB')}  ·  ${totalVisits} visits  ·  ${totalKm} km`,
     14, 25
   )
 
   const urgLabel = (u: string) =>
-    u === 'urgent' ? 'Urgente' : u === 'attention' ? 'Attenzione' : 'OK'
+    u === 'urgent' ? 'Urgent' : u === 'attention' ? 'Attention' : 'OK'
 
   let y = 32
 
@@ -109,13 +109,13 @@ export function exportToPDF(plan: DailyPlan[]): void {
     doc.setFontSize(12)
     doc.setTextColor(50, 50, 60)
     doc.text(
-      `${formatDateLabel(day.date, { weekday: 'long', day: 'numeric', month: 'long' }, 'it-IT')}   ·   ${day.visits.length} visite · ${day.totalKm} km`,
+      `${formatDateLabel(day.date, { weekday: 'long', day: 'numeric', month: 'long' }, 'en-GB')}   ·   ${day.visits.length} visits · ${day.totalKm} km`,
       14, y
     )
 
     autoTable(doc, {
       startY: y + 3,
-      head: [['Ora', 'Cliente', 'Città', 'Indirizzo', 'Km', 'Stato', 'Ritardo']],
+      head: [['Time', 'Client', 'Town', 'Address', 'Km', 'Status', 'Overdue']],
       body: day.visits.map((v) => [
         v.timeSlot,
         v.clientName,
@@ -123,7 +123,7 @@ export function exportToPDF(plan: DailyPlan[]): void {
         v.address || '-',
         v.distance ? String(v.distance) : '-',
         urgLabel(v.urgency),
-        v.lastVisitDays ? `${v.lastVisitDays}g` : '-',
+        v.lastVisitDays ? `${v.lastVisitDays}d` : '-',
       ]),
       styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
       headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
@@ -157,8 +157,8 @@ export function exportToPDF(plan: DailyPlan[]): void {
     doc.setPage(i)
     doc.setFontSize(8)
     doc.setTextColor(160, 160, 170)
-    doc.text(`Pagina ${i} / ${pages}`, pageW - 32, pageH - 8)
+    doc.text(`Page ${i} / ${pages}`, pageW - 32, pageH - 8)
   }
 
-  doc.save(`piano-visite-${toDateStr(new Date())}.pdf`)
+  doc.save(`visit-plan-${toDateStr(new Date())}.pdf`)
 }
