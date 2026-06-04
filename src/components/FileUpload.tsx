@@ -11,7 +11,7 @@ interface FileUploadProps {
 export function FileUpload({ onUpload }: FileUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragActive, setDragActive] = useState(false)
-  const { parseCSV, loading, error } = useFileParser()
+  const { parseFile, loading, error } = useFileParser()
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -30,7 +30,7 @@ export function FileUpload({ onUpload }: FileUploadProps) {
       return
     }
 
-    const result = await parseCSV(file)
+    const result = await parseFile(file)
     if (result.success && result.data) {
       onUpload(result.data)
     }

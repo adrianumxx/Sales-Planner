@@ -14,6 +14,7 @@ import { useAuth } from './hooks/useAuth'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { exportToCSV, exportToICalendar } from './utils/export'
 import { getCityCoordinates } from './utils/geo'
+import { useFileParser } from './hooks/useFileParser'
 import type { VisitDay } from './types'
 
 function App() {
@@ -94,6 +95,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [visitsByDate, setVisitsByDate] = useLocalStorage('visitsByDate', {} as Record<string, VisitDay[]>)
   const planner = useSalesPlanner()
+  const { parseFile } = useFileParser()
 
   // Load saved state on mount
   useEffect(() => {
@@ -181,37 +183,11 @@ function AppContent({ user, onLogout }: AppContentProps) {
               {/* File Manager */}
               <FileManager
                 hasData={planner.data.length > 0}
-                onUpload={(file) => {
-                  const reader = new FileReader()
-                  reader.onload = async (e) => {
-                    const text = e.target?.result as string
-                    // Parse CSV and load
-                    try {
-                      const lines = text.split('\n').filter(l => l.trim())
-                      const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
-                      const clients = lines.slice(1).map(line => {
-                        const values = line.split(',').map(v => v.trim())
-                        const urgencyRaw = (values[headers.indexOf('urgency status')] || 'ok').toLowerCase()
-                        let urgency: 'urgent' | 'attention' | 'ok' = 'ok'
-                        if (urgencyRaw === 'urgent') urgency = 'urgent'
-                        else if (urgencyRaw === 'attention') urgency = 'attention'
-
-                        return {
-                          id: Math.random().toString(36).substr(2, 9),
-                          clientName: values[headers.indexOf('client name')] || '',
-                          town: values[headers.indexOf('town')] || '',
-                          lastVisitDays: parseInt(values[headers.indexOf('last visit (days)')] || '0'),
-                          urgency,
-                        }
-                      }).filter(c => c.clientName)
-                      if (clients.length > 0) {
-                        planner.loadClients(clients)
-                      }
-                    } catch (err) {
-                      console.error('CSV parse error:', err)
-                    }
+                onUpload={async (file) => {
+                  const result = await parseFile(file)
+                  if (result.success && result.data) {
+                    planner.loadClients(result.data)
                   }
-                  reader.readAsText(file)
                 }}
                 onClear={() => {
                   planner.data.length = 0
