@@ -4,7 +4,9 @@ import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
 import { todayStr } from '../utils/date'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
+import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
+import { supabase } from '../lib/supabase'
 
 // One-time migration from the legacy combined 'salesPlannerState' blob to the
 // per-key persistence below. Runs before the hook reads localStorage.
@@ -26,7 +28,7 @@ function migrateLegacyState() {
   }
 }
 
-export function useSalesPlanner() {
+export function useSalesPlanner(userId?: string) {
   migrateLegacyState()
 
   // Persistent core state — survives reloads (incl. manual plan edits)
@@ -180,8 +182,9 @@ export function useSalesPlanner() {
 
   const saveVoiceNote = useCallback((visitId: string, blob: Blob) => {
     if (!blob.size) {
-      // Empty blob signals deletion
+      // Empty blob signals deletion (local IndexedDB + cloud Storage)
       deleteVoiceNote(visitId).catch(() => {})
+      if (userId) deleteVoiceNoteCloud(userId, visitId).catch(() => {})
       setVoiceNotes(prev => {
         const next = { ...prev }
         if (next[visitId]) URL.revokeObjectURL(next[visitId])
@@ -191,12 +194,13 @@ export function useSalesPlanner() {
       return
     }
     putVoiceNote(visitId, blob).catch(() => {})
+    if (userId) uploadVoiceNote(userId, visitId, blob).catch(() => {})
     const url = URL.createObjectURL(blob)
     setVoiceNotes(prev => {
       if (prev[visitId]) URL.revokeObjectURL(prev[visitId])
       return { ...prev, [visitId]: url }
     })
-  }, [])
+  }, [userId])
 
   const getFilteredPlan = useCallback((): DailyPlan[] => {
     if (filter === 'all') return plan
@@ -307,6 +311,119 @@ export function useSalesPlanner() {
       })
     )
   }, [])
+
+  // ── Cloud sync (Supabase, per-user) ───────────────────────────────────────────
+  // The full app state (minus voice audio, which stays in IndexedDB) is mirrored
+  // to a single per-user row so it follows the rep across devices. Last-write-wins
+  // by `updated_at`; localStorage stays the offline source of truth.
+  const cloudState = useMemo(() => ({
+    v: 1,
+    data,
+    plan,
+    homeAddress,
+    visitsPerDay,
+    darkMode,
+    adminDays: adminDaysArr,
+    completed: completedVisitsArr,
+    notes,
+  }), [data, plan, homeAddress, visitsPerDay, darkMode, adminDaysArr, completedVisitsArr, notes])
+
+  const cloudStateRef = useRef(cloudState)
+  useEffect(() => { cloudStateRef.current = cloudState }, [cloudState])
+
+  const hydratingRef = useRef(false)
+  const pulledRef = useRef(false)
+
+  const pushCloud = useCallback(async () => {
+    if (!userId) return
+    const updated_at = new Date().toISOString()
+    try {
+      const { error } = await supabase
+        .from('planner_state')
+        .upsert({ user_id: userId, state: cloudStateRef.current, updated_at })
+      if (!error) window.localStorage.setItem('salesPlanner.cloudAt', updated_at)
+    } catch {
+      /* offline / RLS — keep working locally */
+    }
+  }, [userId])
+
+  // Pull on login: apply remote if newer, otherwise push local up.
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: row, error } = await supabase
+          .from('planner_state')
+          .select('state, updated_at')
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (cancelled || error) return
+        const localAt = window.localStorage.getItem('salesPlanner.cloudAt') || ''
+        if (row?.updated_at && row.updated_at > localAt && row.state) {
+          hydratingRef.current = true
+          const s = row.state as Record<string, any>
+          if (Array.isArray(s.data)) setData(s.data)
+          if (Array.isArray(s.plan)) setPlan(s.plan)
+          if (typeof s.homeAddress === 'string') setHomeAddress(s.homeAddress)
+          if (typeof s.visitsPerDay === 'number') setVisitsPerDay(s.visitsPerDay)
+          if (typeof s.darkMode === 'boolean') setDarkMode(s.darkMode)
+          if (Array.isArray(s.adminDays)) setAdminDaysArr(s.adminDays)
+          if (Array.isArray(s.completed)) setCompletedVisitsArr(s.completed)
+          if (s.notes && typeof s.notes === 'object') setNotes(s.notes)
+          window.localStorage.setItem('salesPlanner.cloudAt', row.updated_at)
+          setTimeout(() => { hydratingRef.current = false }, 0)
+        } else {
+          await pushCloud()
+        }
+        pulledRef.current = true
+      } catch {
+        /* ignore — offline */
+      }
+    })()
+    return () => { cancelled = true }
+    // Run once per login. Setters from useLocalStorage aren't memoised, so they
+    // are intentionally excluded to avoid re-pulling on every render.
+  }, [userId])
+
+  // Debounced push whenever the state changes (after the initial pull).
+  useEffect(() => {
+    if (!userId || !pulledRef.current || hydratingRef.current) return
+    const id = setTimeout(() => { pushCloud() }, 800)
+    return () => clearTimeout(id)
+  }, [cloudState, userId, pushCloud])
+
+  // Reconcile voice-note audio with Supabase Storage on login: pull notes that
+  // exist only in the cloud into the local IndexedDB cache, and push local-only
+  // notes up. (Audio is mirrored separately from the JSON state above.)
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [cloudIds, local] = await Promise.all([listVoiceNotes(userId), getAllVoiceNotes()])
+        if (cancelled) return
+        for (const id of cloudIds) {
+          if (!local[id]) {
+            const blob = await downloadVoiceNote(userId, id)
+            if (blob && !cancelled) {
+              await putVoiceNote(id, blob)
+              const u = URL.createObjectURL(blob)
+              setVoiceNotes(prev => (prev[id] ? prev : { ...prev, [id]: u }))
+            }
+          }
+        }
+        for (const id of Object.keys(local)) {
+          if (!cloudIds.includes(id)) {
+            await uploadVoiceNote(userId, id, local[id]).catch(() => {})
+          }
+        }
+      } catch {
+        /* offline — local cache still works */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [userId])
 
   return {
     data,
