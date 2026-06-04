@@ -132,38 +132,16 @@ export function planAreaCoverage(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Cluster priority-sorted clients into day-sized buckets. Each day is seeded by
- * the highest-priority remaining account, then filled with its nearest
- * geographic neighbours — so you hit the most-overdue client and everyone
- * around it on the same trip.
+ * Chunk the already priority-sorted clients into day-sized buckets, strictly in
+ * order. The most-overdue clients fill day 1, the next batch day 2, and so on —
+ * a low-overdue account never jumps ahead of a more-overdue one just because
+ * it's nearby. (Within-day driving order is optimised separately.)
  */
 function groupByDay(clients: Client[], perDay: number): Client[][] {
   const days: Client[][] = []
-  const remaining = [...clients]
-
-  while (remaining.length > 0) {
-    const seed = remaining.shift()!
-    const bucket: Client[] = [seed]
-    const ref = coordOf(seed)
-
-    while (bucket.length < perDay && remaining.length > 0) {
-      let idx = 0
-      if (ref) {
-        let best = Infinity
-        remaining.forEach((c, i) => {
-          const p = coordOf(c)
-          if (p) {
-            const d = getDistance(ref.lat, ref.lon, p.lat, p.lon)
-            if (d < best) { best = d; idx = i }
-          }
-        })
-      }
-      bucket.push(remaining.splice(idx, 1)[0])
-    }
-
-    days.push(bucket)
+  for (let i = 0; i < clients.length; i += perDay) {
+    days.push(clients.slice(i, i + perDay))
   }
-
   return days
 }
 
