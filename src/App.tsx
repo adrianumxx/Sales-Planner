@@ -178,16 +178,16 @@ function AppContent({ user, onLogout }: AppContentProps) {
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
         {/* Header */}
       <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              <h1 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-50">📅 Sales Planner</h1>
+              <p className="hidden sm:block text-sm text-slate-500 dark:text-slate-400 mt-1">
                 {user.email} • 90-day sales visit planner
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {/* File Manager */}
               <FileManager
                 hasData={planner.data.length > 0}
@@ -204,29 +204,47 @@ function AppContent({ user, onLogout }: AppContentProps) {
               />
 
               {planner.plan.length > 0 && (
-                <div className="hidden sm:flex items-center gap-2">
+                <>
+                  {/* Mobile: icon-only buttons */}
                   <button
                     onClick={handleExportCSV}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
+                    className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    title="Export CSV"
                   >
                     <FileDown className="h-4 w-4" />
-                    CSV
                   </button>
                   <button
                     onClick={handleExportICal}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
+                    className="flex sm:hidden items-center justify-center p-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    title="Export iCal"
                   >
                     <Download className="h-4 w-4" />
-                    iCal
                   </button>
-                </div>
+                  {/* Desktop: text + icon buttons */}
+                  <div className="hidden sm:flex items-center gap-2">
+                    <button
+                      onClick={handleExportCSV}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
+                    >
+                      <FileDown className="h-4 w-4" />
+                      CSV
+                    </button>
+                    <button
+                      onClick={handleExportICal}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-50 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition text-sm"
+                    >
+                      <Download className="h-4 w-4" />
+                      iCal
+                    </button>
+                  </div>
+                </>
               )}
 
               <button
                 onClick={() => planner.setShowSettings(!planner.showSettings)}
                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
               >
-                <Menu className="h-6 w-6 text-slate-900 dark:text-slate-50" />
+                <Menu className="h-5 w-5 sm:h-6 sm:w-6 text-slate-900 dark:text-slate-50" />
               </button>
 
               <button
@@ -234,7 +252,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
                 title="Logout"
               >
-                <LogOut className="h-6 w-6 text-slate-900 dark:text-slate-50" />
+                <LogOut className="h-5 w-5 sm:h-6 sm:w-6 text-slate-900 dark:text-slate-50" />
               </button>
             </div>
           </div>
@@ -242,8 +260,8 @@ function AppContent({ user, onLogout }: AppContentProps) {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="space-y-4 sm:space-y-8">
           {/* Upload Section */}
           {planner.data.length === 0 ? (
             <FileUpload onUpload={planner.loadClients} />
@@ -264,9 +282,9 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="flex gap-3 items-center justify-between"
+                className="flex gap-2 sm:gap-3 items-center justify-between"
               >
-                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">
+                <h2 className="text-base sm:text-xl font-bold text-slate-900 dark:text-slate-50">
                   {viewMode === 'list' ? '2-Week Plan' : 'Calendar View'}
                 </h2>
                 <div className="flex gap-2">
@@ -274,7 +292,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setViewMode('list')}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base rounded-lg font-semibold transition-all ${
                       viewMode === 'list'
                         ? 'bg-indigo-600 text-white'
                         : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-50'
@@ -286,7 +304,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setViewMode('calendar')}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base rounded-lg font-semibold transition-all flex items-center gap-1 sm:gap-2 ${
                       viewMode === 'calendar'
                         ? 'bg-indigo-600 text-white'
                         : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-50'

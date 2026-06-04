@@ -48,7 +48,7 @@ export function PlanViewer({
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-800/30 dark:to-slate-900/30 rounded-2xl p-16 text-center backdrop-blur-sm border border-slate-200 dark:border-slate-700"
+        className="bg-gradient-to-br from-slate-50/50 to-slate-100/50 dark:from-slate-800/30 dark:to-slate-900/30 rounded-2xl p-8 sm:p-16 text-center backdrop-blur-sm border border-slate-200 dark:border-slate-700"
       >
         <motion.div
           initial={{ scale: 0 }}
@@ -98,13 +98,13 @@ export function PlanViewer({
             {/* Day Header */}
             <motion.div
               whileHover={{ x: 4 }}
-              className="bg-gradient-to-r from-indigo-600/10 to-purple-600/10 dark:from-indigo-500/20 dark:to-purple-600/20 px-6 py-4 border-l-4 border-indigo-600 dark:border-cyan-400"
+              className="bg-gradient-to-r from-indigo-600/10 to-purple-600/10 dark:from-indigo-500/20 dark:to-purple-600/20 px-3 sm:px-6 py-3 sm:py-4 border-l-4 border-indigo-600 dark:border-cyan-400"
             >
               <div className="flex justify-between items-center">
                 <motion.h3
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="font-bold text-lg text-slate-900 dark:text-slate-50"
+                  className="font-bold text-sm sm:text-lg text-slate-900 dark:text-slate-50"
                 >
                   {new Date(day.date).toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -115,13 +115,13 @@ export function PlanViewer({
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300"
+                  className="flex items-center gap-1 sm:gap-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 flex-shrink-0"
                 >
-                  <span className="bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg font-semibold">
-                    {day.visits.length} visit{day.visits.length !== 1 ? 's' : ''}
+                  <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg font-semibold">
+                    {day.visits.length}v
                   </span>
-                  <span className="bg-purple-100 dark:bg-purple-900/30 px-3 py-1 rounded-lg font-semibold">
-                    {day.totalKm} km
+                  <span className="bg-purple-100 dark:bg-purple-900/30 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg font-semibold">
+                    {day.totalKm}km
                   </span>
                 </motion.div>
               </div>
@@ -201,7 +201,7 @@ function VisitRow({
     <motion.div
       variants={rowVariants}
       layout
-      className={`p-4 transition-all duration-300 ${
+      className={`p-3 sm:p-4 transition-all duration-300 ${
         completed ? 'bg-green-50/30 dark:bg-green-900/10' : 'hover:bg-slate-100/50 dark:hover:bg-slate-700/30'
       }`}
     >
@@ -239,17 +239,17 @@ function VisitRow({
 
         <div className="flex-1 min-w-0">
           {/* Title & Urgency & Timer */}
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="flex items-center gap-3 flex-1">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-3 mb-2">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="text-2xl"
+                className="text-lg sm:text-2xl flex-shrink-0"
               >
                 {getUrgencyBadge(visit.urgency)}
               </motion.span>
               <h4
-                className={`font-bold text-lg ${
+                className={`font-bold text-sm sm:text-lg truncate ${
                   completed
                     ? 'line-through text-slate-400 dark:text-slate-500'
                     : 'text-slate-900 dark:text-slate-50'
@@ -258,7 +258,7 @@ function VisitRow({
                 {visit.clientName}
               </h4>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <VisitTimer
                 visitId={visit.id}
                 onStateChange={(_, state, elapsed, startTime) =>
@@ -271,7 +271,7 @@ function VisitRow({
               />
               <motion.span
                 whileHover={{ scale: 1.05 }}
-                className={`text-xs font-bold px-3 py-1 rounded-lg whitespace-nowrap ${
+                className={`text-xs font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg whitespace-nowrap ${
                   visit.urgency === 'urgent'
                     ? 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-100'
                     : visit.urgency === 'attention'
@@ -313,14 +313,14 @@ function VisitRow({
               <motion.div
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex gap-2"
+                className="flex flex-col sm:flex-row gap-2 w-full"
               >
                 <input
                   type="text"
                   value={noteValue}
                   onChange={(e) => setNoteValue(e.target.value)}
                   placeholder="Add a text note..."
-                  className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full sm:flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   autoFocus
                 />
                 <motion.button
