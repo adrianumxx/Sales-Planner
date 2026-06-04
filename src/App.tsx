@@ -102,11 +102,13 @@ function AppContent({ user, onLogout }: AppContentProps) {
   useEffect(() => {
     if (savedState) {
       if (savedState.data?.length > 0) {
-        planner.loadClients(savedState.data)
-        planner.setFilter(savedState.filter || 'all')
+        // Set parameters FIRST so loadClients uses correct values
         planner.setHomeAddress(savedState.homeAddress || 'Bruxelles')
         planner.setVisitsPerDay(savedState.visitsPerDay || 7)
+        planner.setFilter(savedState.filter || 'all')
         planner.setDarkMode(savedState.darkMode || false)
+        // Then load clients with correct parameters
+        planner.loadClients(savedState.data)
       }
     }
   }, [])
