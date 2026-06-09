@@ -127,14 +127,37 @@ function AppContent({ user, onLogout }: AppContentProps) {
     return map
   }, [planner.plan])
 
-  const metrics = planner.getTotalMetrics()
   const filteredPlan = planner.getFilteredPlan()
 
-  // Home coordinates for area-coverage routing (default Bruxelles)
+  // The plan actually on screen: a search/command result when active, else the
+  // full plan. Everything (dashboard, list) reads from this so the numbers up
+  // top always match what's shown below.
+  const displayPlan = commandResult ? commandResult.days : filteredPlan
+
+  const metrics = useMemo(() => {
+    let totalVisits = 0, totalKm = 0, urgentCount = 0, attentionCount = 0
+    for (const d of displayPlan) {
+      totalKm += d.totalKm
+      for (const v of d.visits) {
+        totalVisits++
+        if (v.urgency === 'urgent') urgentCount++
+        else if (v.urgency === 'attention') attentionCount++
+      }
+    }
+    return { totalVisits, totalKm: Math.round(totalKm * 10) / 10, urgentCount, attentionCount }
+  }, [displayPlan])
+
+  // Start (home) and evening-return coordinates for area-coverage routing.
   const homeCoords = useMemo(() => {
     const c = getCityCoordinates(planner.homeAddress) || getCityCoordinates('Bruxelles')
     return c ? { lat: c.lat, lon: c.lon } : { lat: 50.8503, lon: 4.3517 }
   }, [planner.homeAddress])
+
+  const endCoords = useMemo(() => {
+    if (!planner.returnAddress) return homeCoords
+    const c = getCityCoordinates(planner.returnAddress)
+    return c ? { lat: c.lat, lon: c.lon } : homeCoords
+  }, [planner.returnAddress, homeCoords])
 
   const handleRemoveVisit = (date: string, visitId: string) => {
     planner.removeVisit(date, visitId)
@@ -237,10 +260,10 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 totalKm={metrics.totalKm}
                 urgentCount={metrics.urgentCount}
                 attentionCount={metrics.attentionCount}
-                planDays={planner.plan.length}
+                planDays={displayPlan.length}
                 dateRangeLabel={
-                  planner.plan.length > 0
-                    ? `${formatDateLabel(planner.plan[0].date, { month: 'short', day: 'numeric' })} – ${formatDateLabel(planner.plan[planner.plan.length - 1].date, { month: 'short', day: 'numeric' })}`
+                  displayPlan.length > 0
+                    ? `${formatDateLabel(displayPlan[0].date, { month: 'short', day: 'numeric' })} – ${formatDateLabel(displayPlan[displayPlan.length - 1].date, { month: 'short', day: 'numeric' })}`
                     : ''
                 }
               />
@@ -252,6 +275,8 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     plan={planner.plan}
                     clients={planner.data}
                     homeCoords={homeCoords}
+                    endCoords={endCoords}
+                    blocked={planner.adminDays}
                     visitsPerDay={planner.visitsPerDay}
                     maxKmPerDay={planner.maxKmPerDay}
                     onResult={setCommandResult}
