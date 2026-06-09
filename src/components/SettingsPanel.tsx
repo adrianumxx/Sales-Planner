@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging, Trash2 } from 'lucide-react'
+import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging, Trash2, Globe } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MAJOR_CITIES } from '../utils/geo'
 
@@ -11,6 +11,7 @@ interface SettingsPanelProps {
   vehicleType: 'combustion' | 'electric'
   evRangeKm: number
   carModel: string
+  mapsApiKey: string
   darkMode: boolean
   onHomeAddressChange: (address: string) => void
   onReturnAddressChange: (address: string) => void
@@ -19,6 +20,7 @@ interface SettingsPanelProps {
   onVehicleTypeChange: (t: 'combustion' | 'electric') => void
   onEvRangeChange: (km: number) => void
   onCarModelChange: (m: string) => void
+  onMapsApiKeyChange: (k: string) => void
   onDarkModeChange: (enabled: boolean) => void
   onClearAll: () => void
   onClose: () => void
@@ -35,6 +37,7 @@ export function SettingsPanel({
   vehicleType,
   evRangeKm,
   carModel,
+  mapsApiKey,
   darkMode,
   onHomeAddressChange,
   onReturnAddressChange,
@@ -43,6 +46,7 @@ export function SettingsPanel({
   onVehicleTypeChange,
   onEvRangeChange,
   onCarModelChange,
+  onMapsApiKeyChange,
   onDarkModeChange,
   onClearAll,
   onClose,
@@ -308,6 +312,31 @@ export function SettingsPanel({
                   </motion.div>
                 )}
               </AnimatePresence>
+            </motion.div>
+
+            {/* Google Maps API key (optional, precise geocoding) */}
+            <motion.div
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.45 }}
+            >
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
+                <Globe className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                Google Maps API key <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <input
+                type="password"
+                value={mapsApiKey}
+                onChange={(e) => onMapsApiKeyChange(e.target.value.trim())}
+                placeholder="Paste your key — stays on this device"
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full px-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 font-mono text-sm"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                🌍 Unlocks precise street-level geocoding (fixes same-town locations). Stored only on this device; restrict the key by HTTP referrer in Google Cloud.
+              </p>
             </motion.div>
 
             {/* Dark Mode Toggle */}

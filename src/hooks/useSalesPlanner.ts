@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
+import { loadGoogleMaps, geocodeAddress } from '../utils/googleMaps'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
@@ -48,6 +49,11 @@ export function useSalesPlanner(userId?: string) {
   const [vehicleType, setVehicleType] = useLocalStorage<'combustion' | 'electric'>('salesPlanner.vehicleType', 'combustion')
   const [evRangeKm, setEvRangeKm] = useLocalStorage('salesPlanner.evRangeKm', 300)
   const [carModel, setCarModel] = useLocalStorage('salesPlanner.carModel', '')
+
+  // Optional Google Maps key (kept on this device only — not synced to cloud).
+  // When set, client addresses are geocoded to precise street-level coordinates.
+  const [mapsApiKey, setMapsApiKey] = useLocalStorage('salesPlanner.mapsApiKey', '')
+  const [geoProgress, setGeoProgress] = useState<{ done: number; total: number } | null>(null)
 
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
@@ -172,6 +178,45 @@ export function useSalesPlanner(userId?: string) {
       setPlan(newPlan)
     }
   }, [data, homeAddress, returnAddress, visitsPerDay, adminDays, maxKmPerDay])
+
+  // Precise geocoding pass (only when a Google Maps key is set). Resolves each
+  // client's street address to exact coordinates, caches them, then regenerates
+  // the plan so routing/distances reflect the real locations. Each client is
+  // attempted once (geocoded flag), so this is a no-op after the first pass.
+  useEffect(() => {
+    if (!mapsApiKey) return
+    const pending = data.filter(c => !c.geocoded && (c.address || c.town))
+    if (pending.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      try { await loadGoogleMaps(mapsApiKey) } catch { return }
+      if (cancelled) return
+      setGeoProgress({ done: 0, total: pending.length })
+
+      const byId = new Map(data.map(c => [c.id, c]))
+      let done = 0
+      for (const c of pending) {
+        if (cancelled) return
+        const p = await geocodeAddress(c.address ? `${c.address}, Belgium` : `${c.town}, Belgium`)
+        const cur = byId.get(c.id)!
+        byId.set(c.id, p ? { ...cur, lat: p.lat, lon: p.lon, geocoded: true } : { ...cur, geocoded: true })
+        done++
+        if (done % 5 === 0) setGeoProgress({ done, total: pending.length })
+      }
+      if (cancelled) return
+
+      const updated = data.map(c => byId.get(c.id)!)
+      setData(updated)
+      const homeCoords = getCityCoordinates(homeAddress)
+      if (homeCoords) {
+        const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+        setPlan(generatePlan(updated, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
+      }
+      setGeoProgress(null)
+    })()
+    return () => { cancelled = true }
+  }, [mapsApiKey, data])
 
   // Mark/unmark a day as admin. Visits reflow onto the next free workdays,
   // preserving order, ids and manual edits (no full regeneration).
@@ -490,6 +535,9 @@ export function useSalesPlanner(userId?: string) {
     setEvRangeKm,
     carModel,
     setCarModel,
+    mapsApiKey,
+    setMapsApiKey,
+    geoProgress,
     adminDays,
     toggleAdminDay,
     loadClients,
