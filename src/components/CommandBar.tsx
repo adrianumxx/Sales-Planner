@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Sparkles, X, MapPin, Search, User, Building2, CornerDownLeft } from 'lucide-react'
+import { Sparkles, X, MapPin, Search, User, Building2, CornerDownLeft, Clock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay, Client } from '../types'
 import { coordsForCity, resolveCoords, getDistance, searchCities, nearestCity } from '../utils/geo'
@@ -37,7 +37,16 @@ const DAY_NAMES: Record<string, number> = {
 
 const WEEKDAY_LABEL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-const RADII = [5, 10, 20, 30, 50]
+const RADII = [1, 2, 5, 10, 20, 30, 50]
+
+// "Not visited for ≥ N days" presets (0 = off).
+const MIN_DAYS_PRESETS: { value: number; label: string }[] = [
+  { value: 0, label: 'Any' },
+  { value: 90, label: '90d+' },
+  { value: 180, label: '180d+' },
+  { value: 365, label: '1y+' },
+  { value: 730, label: '2y+' },
+]
 
 function normalize(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9\s]/g, '').trim()
@@ -82,6 +91,7 @@ interface Intent {
   scope: Scope
   city: { name: string; coord: { lat: number; lon: number } } | null
   radiusKm: number
+  minDays: number
   urgency: 'urgent' | 'attention' | 'ok' | null
   weekday: number | null
   textTokens: string[]
@@ -89,10 +99,11 @@ interface Intent {
 }
 
 /** Cheap, routing-free parse of a query into a structured intent. */
-function analyze(raw: string, radiusState: number): Intent | null {
-  if (!raw.trim()) return null
+function analyze(raw: string, radiusState: number, minDaysState: number): Intent | null {
+  // Proceed with no text only when a min-days filter is active (pure filter).
+  if (!raw.trim() && minDaysState === 0) return null
   const q = normalize(raw)
-  const words = q.split(/\s+/)
+  const words = q ? q.split(/\s+/) : []
 
   const scope: Scope =
     words.some(w => ['oggi', 'aujourd', 'today'].includes(w)) ? 'today'
@@ -104,6 +115,11 @@ function analyze(raw: string, radiusState: number): Intent | null {
   const radiusMatch = q.match(/(\d{1,3})\s*km/)
   const radiusKm = radiusMatch ? parseInt(radiusMatch[1]) : radiusState
 
+  // "Not visited for ≥ N days" — typed as ">200", "200d", "200 giorni", etc.
+  const gtMatch = raw.toLowerCase().match(/>\s*(\d{1,4})/)
+  const unitMatch = q.match(/(\d{1,4})\s*(?:gg|giorni|jours|days|day|g|d)\b/)
+  const minDays = gtMatch ? parseInt(gtMatch[1]) : unitMatch ? parseInt(unitMatch[1]) : minDaysState
+
   const urgency =
     words.some(w => ['urgenti', 'urgent', 'priorita', 'priority', 'critici'].includes(w)) ? 'urgent'
     : words.some(w => ['attenzione', 'attention', 'warning'].includes(w)) ? 'attention'
@@ -114,7 +130,10 @@ function analyze(raw: string, radiusState: number): Intent | null {
   for (const w of words) { if (w in DAY_NAMES) { weekday = DAY_NAMES[w]; break } }
 
   const cityWords = city ? city.name.split(' ') : []
-  const textTokens = words.filter(w => w.length >= 3 && !STOPWORDS.has(w) && !cityWords.includes(w))
+  // Exclude numeric tokens (e.g. "30km", "200d") so they don't run as name searches.
+  const textTokens = words.filter(
+    w => w.length >= 3 && !STOPWORDS.has(w) && !cityWords.includes(w) && !/^\d/.test(w)
+  )
 
   // Did-you-mean only when no city matched: test the longest free token.
   let didYouMean: string | null = null
@@ -126,9 +145,11 @@ function analyze(raw: string, radiusState: number): Intent | null {
   return {
     raw: raw.trim(),
     mode: city ? 'area' : 'filter',
-    scope, city, radiusKm, urgency, weekday, textTokens, didYouMean,
+    scope, city, radiusKm, minDays, urgency, weekday, textTokens, didYouMean,
   }
 }
+
+const minDaysSuffix = (d: number) => (d > 0 ? ` · not visited ${d}d+` : '')
 
 /** Apply date / urgency / text filters to the existing plan (cheap, no routing). */
 function filterDays(intent: Intent, plan: DailyPlan[]): DailyPlan[] {
@@ -150,6 +171,8 @@ function filterDays(intent: Intent, plan: DailyPlan[]): DailyPlan[] {
 
   if (intent.urgency) days = filterVisits(v => v.urgency === intent.urgency)
 
+  if (intent.minDays > 0) days = filterVisits(v => (v.lastVisitDays ?? 0) >= intent.minDays)
+
   for (const token of intent.textTokens) {
     const match = (v: VisitDay) =>
       normalize(v.town).includes(token) || normalize(v.clientName).includes(token)
@@ -161,6 +184,11 @@ function filterDays(intent: Intent, plan: DailyPlan[]): DailyPlan[] {
   }
 
   return days
+}
+
+/** Clients not visited for ≥ minDays (no-op when minDays is 0). */
+function overdueClients(clients: Client[], minDays: number): Client[] {
+  return minDays > 0 ? clients.filter(c => (c.lastVisitDays ?? 0) >= minDays) : clients
 }
 
 /** Count clients within a radius of a centre (cheap — used for the live preview). */
@@ -189,10 +217,10 @@ interface Preview {
 /** Human-readable description of what a query will do, with a live count. */
 function describe(intent: Intent, plan: DailyPlan[], clients: Client[]): Preview {
   if (intent.mode === 'area' && intent.city) {
-    const count = countInArea(clients, intent.city.coord, intent.radiusKm)
+    const count = countInArea(overdueClients(clients, intent.minDays), intent.city.coord, intent.radiusKm)
     return {
       type: 'area',
-      text: `${titleCase(intent.city.name)} + surroundings · ${intent.radiusKm} km${scopeSuffix(intent.scope)}`,
+      text: `${titleCase(intent.city.name)} + surroundings · ${intent.radiusKm} km${scopeSuffix(intent.scope)}${minDaysSuffix(intent.minDays)}`,
       count,
       empty: count === 0,
     }
@@ -203,6 +231,7 @@ function describe(intent: Intent, plan: DailyPlan[], clients: Client[]): Preview
   if (intent.urgency) parts.push(intent.urgency)
   if (intent.scope !== 'all') parts.push(intent.scope === 'week' ? 'this week' : intent.scope)
   if (intent.weekday != null) parts.push(WEEKDAY_LABEL[intent.weekday])
+  if (intent.minDays > 0) parts.push(`not visited ${intent.minDays}d+`)
   for (const t of intent.textTokens) parts.push(`"${t}"`)
   return {
     type: 'filter',
@@ -221,7 +250,7 @@ function buildResult(
 ): CommandResult {
   if (intent.mode === 'area' && intent.city) {
     const { plan: areaPlan, count } = planAreaCoverage(
-      clients, intent.city.coord, intent.radiusKm, homeCoords, visitsPerDay
+      overdueClients(clients, intent.minDays), intent.city.coord, intent.radiusKm, homeCoords, visitsPerDay
     )
     let days = areaPlan
     if (intent.scope === 'today') days = areaPlan.slice(0, 1)
@@ -231,7 +260,7 @@ function buildResult(
     const totalVisits = days.reduce((s, d) => s + d.visits.length, 0)
     return {
       label: intent.raw,
-      description: `${count} clients within ${intent.radiusKm}km of ${titleCase(intent.city.name)}${scopeSuffix(intent.scope)}`,
+      description: `${count} clients within ${intent.radiusKm}km of ${titleCase(intent.city.name)}${scopeSuffix(intent.scope)}${minDaysSuffix(intent.minDays)}`,
       days,
       totalVisits,
       type: 'area',
@@ -249,9 +278,10 @@ function parseQuery(
   clients: Client[],
   homeCoords: { lat: number; lon: number },
   visitsPerDay: number,
-  radiusState: number
+  radiusState: number,
+  minDaysState: number
 ): CommandResult | null {
-  const intent = analyze(raw, radiusState)
+  const intent = analyze(raw, radiusState, minDaysState)
   return intent ? buildResult(intent, plan, clients, homeCoords, visitsPerDay) : null
 }
 
@@ -302,6 +332,7 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
   const [debounced, setDebounced] = useState('')
   const [focused, setFocused] = useState(false)
   const [radius, setRadius] = useState(20)
+  const [minDays, setMinDays] = useState(0)
   const [showSug, setShowSug] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -314,13 +345,14 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
   }, [query])
 
   // Emit the parsed result (area coverage is heavy, hence the debounced input).
+  // A non-default min-days filter applies even with no text query.
   useEffect(() => {
-    if (!debounced.trim()) { onResult(null); return }
-    onResult(parseQuery(debounced, plan, clients, homeCoords, visitsPerDay, radius))
-  }, [debounced, radius, plan, clients, homeCoords, visitsPerDay, onResult])
+    if (!debounced.trim() && minDays === 0) { onResult(null); return }
+    onResult(parseQuery(debounced, plan, clients, homeCoords, visitsPerDay, radius, minDays))
+  }, [debounced, radius, minDays, plan, clients, homeCoords, visitsPerDay, onResult])
 
   // Live, routing-free interpretation for the inline preview + radius visibility.
-  const intent = useMemo(() => analyze(debounced, radius), [debounced, radius])
+  const intent = useMemo(() => analyze(debounced, radius, minDays), [debounced, radius, minDays])
   const preview = useMemo(
     () => (intent ? describe(intent, plan, clients) : null),
     [intent, plan, clients]
@@ -473,7 +505,7 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
 
       {/* Live intent preview — shows what the query will do, before you commit */}
       <AnimatePresence mode="wait">
-        {query.trim() && preview && (
+        {(query.trim() || minDays > 0) && preview && (
           <motion.div
             key={`${preview.type}-${preview.text}`}
             initial={{ opacity: 0, y: -4 }}
@@ -537,6 +569,26 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Min days since last visit — filters both coverage and plain filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+          <Clock className="h-3 w-3" /> Not visited for:
+        </span>
+        {MIN_DAYS_PRESETS.map(p => (
+          <button
+            key={p.value}
+            onClick={() => setMinDays(p.value)}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+              minDays === p.value
+                ? 'bg-rose-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-rose-100 dark:hover:bg-rose-900/40'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
 
       {/* Example chips */}
       <AnimatePresence>
