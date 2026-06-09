@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Settings, Sun, Moon, Sliders, RotateCcw } from 'lucide-react'
+import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MAJOR_CITIES } from '../utils/geo'
 
@@ -7,10 +7,16 @@ interface SettingsPanelProps {
   homeAddress: string
   visitsPerDay: number
   maxKmPerDay: number
+  vehicleType: 'combustion' | 'electric'
+  evRangeKm: number
+  carModel: string
   darkMode: boolean
   onHomeAddressChange: (address: string) => void
   onVisitsPerDayChange: (count: number) => void
   onMaxKmPerDayChange: (km: number) => void
+  onVehicleTypeChange: (t: 'combustion' | 'electric') => void
+  onEvRangeChange: (km: number) => void
+  onCarModelChange: (m: string) => void
   onDarkModeChange: (enabled: boolean) => void
   onClose: () => void
   onRegenerate: () => void
@@ -22,10 +28,16 @@ export function SettingsPanel({
   homeAddress,
   visitsPerDay,
   maxKmPerDay,
+  vehicleType,
+  evRangeKm,
+  carModel,
   darkMode,
   onHomeAddressChange,
   onVisitsPerDayChange,
   onMaxKmPerDayChange,
+  onVehicleTypeChange,
+  onEvRangeChange,
+  onCarModelChange,
   onDarkModeChange,
   onClose,
 }: SettingsPanelProps) {
@@ -202,6 +214,78 @@ export function SettingsPanel({
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                 🚗 Caps each day's round-trip driving for realistic days. A single far client is never dropped.
               </p>
+            </motion.div>
+
+            {/* Vehicle */}
+            <motion.div
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.4 }}
+            >
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
+                <Car className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                Vehicle
+              </label>
+              <div className="flex rounded-xl bg-slate-100 dark:bg-slate-700/50 p-1 gap-1">
+                {(['combustion', 'electric'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => onVehicleTypeChange(t)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-lg transition-all ${
+                      vehicleType === t
+                        ? 'bg-indigo-600 text-white shadow'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
+                    }`}
+                  >
+                    {t === 'electric' ? <BatteryCharging className="h-4 w-4" /> : <Car className="h-4 w-4" />}
+                    {t === 'electric' ? 'Electric' : 'Combustion'}
+                  </button>
+                ))}
+              </div>
+
+              <AnimatePresence initial={false}>
+                {vehicleType === 'electric' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-4 space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                          Starting range (km)
+                        </label>
+                        <input
+                          type="number"
+                          min={50}
+                          max={1000}
+                          step={10}
+                          value={evRangeKm}
+                          onChange={(e) => onEvRangeChange(parseInt(e.target.value) || 0)}
+                          className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                          Car model (optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={carModel}
+                          onChange={(e) => onCarModelChange(e.target.value)}
+                          placeholder="e.g. Tesla Model 3, VW ID.4…"
+                          className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        ⚡ When a day's route nears your range, the plan suggests a charging stop near the right meeting.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
 
             {/* Dark Mode Toggle */}

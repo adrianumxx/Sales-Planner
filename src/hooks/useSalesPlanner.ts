@@ -41,6 +41,12 @@ export function useSalesPlanner(userId?: string) {
   // Max driving distance per day (round trip, km); 0 = no cap.
   const [maxKmPerDay, setMaxKmPerDay] = useLocalStorage('salesPlanner.maxKmPerDay', 0)
 
+  // Vehicle: combustion vs electric. For EVs, evRangeKm drives mid-day charging
+  // suggestions along each day's route. carModel is informational.
+  const [vehicleType, setVehicleType] = useLocalStorage<'combustion' | 'electric'>('salesPlanner.vehicleType', 'combustion')
+  const [evRangeKm, setEvRangeKm] = useLocalStorage('salesPlanner.evRangeKm', 300)
+  const [carModel, setCarModel] = useLocalStorage('salesPlanner.carModel', '')
+
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
 
@@ -338,11 +344,14 @@ export function useSalesPlanner(userId?: string) {
     homeAddress,
     visitsPerDay,
     maxKmPerDay,
+    vehicleType,
+    evRangeKm,
+    carModel,
     darkMode,
     adminDays: adminDaysArr,
     completed: completedVisitsArr,
     notes,
-  }), [data, plan, homeAddress, visitsPerDay, maxKmPerDay, darkMode, adminDaysArr, completedVisitsArr, notes])
+  }), [data, plan, homeAddress, visitsPerDay, maxKmPerDay, vehicleType, evRangeKm, carModel, darkMode, adminDaysArr, completedVisitsArr, notes])
 
   const cloudStateRef = useRef(cloudState)
   useEffect(() => { cloudStateRef.current = cloudState }, [cloudState])
@@ -384,6 +393,9 @@ export function useSalesPlanner(userId?: string) {
           if (typeof s.homeAddress === 'string') setHomeAddress(s.homeAddress)
           if (typeof s.visitsPerDay === 'number') setVisitsPerDay(s.visitsPerDay)
           if (typeof s.maxKmPerDay === 'number') setMaxKmPerDay(s.maxKmPerDay)
+          if (s.vehicleType === 'electric' || s.vehicleType === 'combustion') setVehicleType(s.vehicleType)
+          if (typeof s.evRangeKm === 'number') setEvRangeKm(s.evRangeKm)
+          if (typeof s.carModel === 'string') setCarModel(s.carModel)
           if (typeof s.darkMode === 'boolean') setDarkMode(s.darkMode)
           if (Array.isArray(s.adminDays)) setAdminDaysArr(s.adminDays)
           if (Array.isArray(s.completed)) setCompletedVisitsArr(s.completed)
@@ -457,6 +469,12 @@ export function useSalesPlanner(userId?: string) {
     setPlanHorizonWeeks,
     maxKmPerDay,
     setMaxKmPerDay,
+    vehicleType,
+    setVehicleType,
+    evRangeKm,
+    setEvRangeKm,
+    carModel,
+    setCarModel,
     adminDays,
     toggleAdminDay,
     loadClients,

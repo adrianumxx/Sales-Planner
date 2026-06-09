@@ -357,6 +357,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onSaveVoiceNote={planner.saveVoiceNote}
                     editable={!commandResult}
                     horizonWeeks={commandResult ? 0 : planner.planHorizonWeeks}
+                    evRangeKm={planner.vehicleType === 'electric' ? planner.evRangeKm : 0}
                     onEditVisit={(visit, date) => setEditingVisit({ visit, date })}
                     onMoveVisit={(visit, fromDate, toDate) => planner.moveVisit(fromDate, toDate, visit.id)}
                     onReorderVisit={planner.reorderVisit}
@@ -406,10 +407,16 @@ function AppContent({ user, onLogout }: AppContentProps) {
           homeAddress={planner.homeAddress}
           visitsPerDay={planner.visitsPerDay}
           maxKmPerDay={planner.maxKmPerDay}
+          vehicleType={planner.vehicleType}
+          evRangeKm={planner.evRangeKm}
+          carModel={planner.carModel}
           darkMode={planner.darkMode}
           onHomeAddressChange={planner.setHomeAddress}
           onVisitsPerDayChange={planner.setVisitsPerDay}
           onMaxKmPerDayChange={planner.setMaxKmPerDay}
+          onVehicleTypeChange={planner.setVehicleType}
+          onEvRangeChange={planner.setEvRangeKm}
+          onCarModelChange={planner.setCarModel}
           onDarkModeChange={planner.setDarkMode}
           onClose={() => planner.setShowSettings(false)}
           onRegenerate={planner.regeneratePlan}

@@ -1,6 +1,7 @@
 import type { CityCoord } from '../types'
 import bePostalRaw from '../data/bePostal.json'
 import beCityRaw from '../data/beCity.json'
+import beChargingRaw from '../data/beCharging.json'
 
 type LatLon = [number, number]
 
@@ -157,4 +158,23 @@ export function getDistanceFromHome(town: string, homeCoords: CityCoord): number
   const c = coordsForCity(town)
   if (!c) return 0
   return getDistance(homeCoords.lat, homeCoords.lon, c.lat, c.lon)
+}
+
+// ── EV charging stations (offline OpenStreetMap snapshot, ~5.2k Belgian POIs) ────
+
+type ChargerRaw = [number, number] | [number, number, string]
+const CHARGERS = beChargingRaw as unknown as ChargerRaw[]
+
+export interface Charger { lat: number; lon: number; name?: string; distanceKm: number }
+
+/** Nearest EV charging station to a point (straight-line). */
+export function nearestCharger(lat: number, lon: number): Charger | null {
+  let best: ChargerRaw | null = null
+  let bestD = Infinity
+  for (const c of CHARGERS) {
+    const d = getDistance(lat, lon, c[0], c[1])
+    if (d < bestD) { bestD = d; best = c }
+  }
+  if (!best) return null
+  return { lat: best[0], lon: best[1], name: best[2], distanceKm: Math.round(bestD * 10) / 10 }
 }

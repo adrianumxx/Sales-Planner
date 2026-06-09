@@ -1,13 +1,50 @@
 import React, { useMemo, useState } from 'react'
 import {
   CheckCircle2, Circle, MapPin, Clock, Edit2, ExternalLink, History,
-  ChevronDown, GripVertical, Pencil, Archive, Route, Navigation, Wand2,
+  ChevronDown, GripVertical, Pencil, Archive, Route, Navigation, Wand2, Zap,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
+import { nearestCharger } from '../utils/geo'
 import { formatDateLabel, parseLocalDate, toDateStr } from '../utils/date'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
+
+// Charge before hitting empty: trigger a charging stop at 85% of range.
+const RANGE_SAFETY = 0.85
+
+interface ChargeStop {
+  afterVisitId: string
+  town: string
+  atKm: number
+  name?: string
+  lat: number
+  lon: number
+  distanceKm: number
+}
+
+/**
+ * Walk a day's route accumulating km; whenever the distance since departure (or
+ * since the last charge) crosses the safe range, recommend a charge at the
+ * nearest station to that stop, then reset the running distance.
+ */
+function dayChargeStops(day: DailyPlan, rangeKm: number): ChargeStop[] {
+  if (!rangeKm) return []
+  const safe = rangeKm * RANGE_SAFETY
+  const stops: ChargeStop[] = []
+  let cum = 0
+  for (const v of day.visits) {
+    cum += v.distance || 0
+    if (cum >= safe && v.lat != null && v.lon != null) {
+      const st = nearestCharger(v.lat, v.lon)
+      if (st) {
+        stops.push({ afterVisitId: v.id, town: v.town, atKm: Math.round(cum), ...st })
+        cum = 0
+      }
+    }
+  }
+  return stops
+}
 
 // Average regional driving speed (km/h) for the day drive-time estimate.
 const AVG_SPEED_KMH = 60
@@ -61,6 +98,8 @@ interface PlanViewerProps {
   onReoptimizeDay?: (date: string) => void
   /** Weeks shown before the rest collapses into a Backlog section. 0 = show all. */
   horizonWeeks?: number
+  /** EV starting range in km (0 = combustion / off → no charging suggestions). */
+  evRangeKm?: number
 }
 
 const BACKLOG_KEY = '__backlog__'
@@ -126,10 +165,18 @@ export function PlanViewer({
   onReorderVisit,
   onReoptimizeDay,
   horizonWeeks = 0,
+  evRangeKm = 0,
 }: PlanViewerProps) {
   const handleSaveVoiceNote = onSaveVoiceNote ?? (() => {})
 
   const weeks = useMemo(() => buildWeeks(plan), [plan])
+
+  // EV charging suggestions per day (only when an EV range is set).
+  const chargeByDate = useMemo(() => {
+    const m: Record<string, ChargeStop[]> = {}
+    if (evRangeKm > 0) for (const d of plan) m[d.date] = dayChargeStops(d, evRangeKm)
+    return m
+  }, [plan, evRangeKm])
   const todayMonday = weekKey(toDateStr(new Date()))
 
   // Expanded weeks: default to the current week (or the first one).
@@ -229,6 +276,11 @@ export function PlanViewer({
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
                         <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
                         <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.totalKm}km</span>
+                        {(chargeByDate[day.date]?.length ?? 0) > 0 && (
+                          <span className="flex items-center gap-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-lg font-semibold" title="Charging stop(s) recommended">
+                            <Zap className="h-3.5 w-3.5" />{chargeByDate[day.date].length}
+                          </span>
+                        )}
                         <span className="hidden sm:inline bg-slate-200/70 dark:bg-slate-700/60 px-2 py-0.5 rounded-lg font-medium" title="Estimated driving time (round trip)">
                           {driveTimeLabel(day.totalKm)}
                         </span>
@@ -260,26 +312,47 @@ export function PlanViewer({
 
                     {/* Visits */}
                     <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {day.visits.map((visit) => (
-                        <VisitRow
-                          key={visit.id}
-                          visit={visit}
-                          completed={completedVisits.has(visit.id)}
-                          noteText={notes[visit.id] || ''}
-                          hasVoiceNote={!!voiceNotes[visit.id]}
-                          voiceNoteUrl={voiceNotes[visit.id]}
-                          editable={editable}
-                          isDragging={dragged?.visit.id === visit.id}
-                          isDropActive={!!dragged && dragged.visit.id !== visit.id}
-                          onToggleComplete={() => onToggleComplete(visit.id)}
-                          onUpdateNote={(note) => onUpdateNote(visit.id, note)}
-                          onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
-                          onEdit={() => onEditVisit?.(visit, day.date)}
-                          onDragStart={() => setDragged({ visit, fromDate: day.date })}
-                          onDragEnd={() => setDragged(null)}
-                          onDropOn={() => handleDropOn(day.date, visit)}
-                        />
-                      ))}
+                      {day.visits.map((visit) => {
+                        const charge = chargeByDate[day.date]?.find(c => c.afterVisitId === visit.id)
+                        return (
+                          <React.Fragment key={visit.id}>
+                            <VisitRow
+                              visit={visit}
+                              completed={completedVisits.has(visit.id)}
+                              noteText={notes[visit.id] || ''}
+                              hasVoiceNote={!!voiceNotes[visit.id]}
+                              voiceNoteUrl={voiceNotes[visit.id]}
+                              editable={editable}
+                              isDragging={dragged?.visit.id === visit.id}
+                              isDropActive={!!dragged && dragged.visit.id !== visit.id}
+                              onToggleComplete={() => onToggleComplete(visit.id)}
+                              onUpdateNote={(note) => onUpdateNote(visit.id, note)}
+                              onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
+                              onEdit={() => onEditVisit?.(visit, day.date)}
+                              onDragStart={() => setDragged({ visit, fromDate: day.date })}
+                              onDragEnd={() => setDragged(null)}
+                              onDropOn={() => handleDropOn(day.date, visit)}
+                            />
+                            {charge && (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${charge.lat},${charge.lon}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 text-green-800 dark:text-green-200 transition-colors"
+                                title="Open this charging station in Google Maps"
+                              >
+                                <Zap className="h-4 w-4 flex-shrink-0" />
+                                <span className="text-xs sm:text-sm">
+                                  <span className="font-semibold">Charge here</span>
+                                  {' · '}{charge.name || 'Charging station'}
+                                  <span className="opacity-70"> · {charge.distanceKm} km from {charge.town} · ~{charge.atKm} km driven</span>
+                                </span>
+                                <Navigation className="h-3.5 w-3.5 ml-auto flex-shrink-0 opacity-70" />
+                              </a>
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
