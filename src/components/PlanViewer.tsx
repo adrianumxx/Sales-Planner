@@ -6,7 +6,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
-import { nearestCharger } from '../utils/geo'
+import { nearestCharger, resolveCoords } from '../utils/geo'
 import { formatDateLabel, parseLocalDate, toDateStr } from '../utils/date'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 
@@ -35,8 +35,11 @@ function dayChargeStops(day: DailyPlan, rangeKm: number): ChargeStop[] {
   let cum = 0
   for (const v of day.visits) {
     cum += v.distance || 0
-    if (cum >= safe && v.lat != null && v.lon != null) {
-      const st = nearestCharger(v.lat, v.lon)
+    if (cum >= safe) {
+      // Fall back to town/address coords so charging still works on plans saved
+      // before per-visit lat/lon existed.
+      const p = v.lat != null && v.lon != null ? { lat: v.lat, lon: v.lon } : resolveCoords(v.town, v.address)
+      const st = p ? nearestCharger(p.lat, p.lon) : null
       if (st) {
         stops.push({ afterVisitId: v.id, town: v.town, atKm: Math.round(cum), ...st })
         cum = 0
@@ -57,24 +60,35 @@ function driveTimeLabel(km: number): string {
   return h === 0 ? `≈ ${m}m` : m === 0 ? `≈ ${h}h` : `≈ ${h}h ${m}m`
 }
 
-/** A point Google Maps can route to: precise coords if known, else address. */
+/**
+ * A point Google Maps can route to. We prefer the street ADDRESS, because our
+ * stored coordinates are only town-level — so clients in the same town would
+ * otherwise collapse to one identical pin. Google geocodes the street precisely.
+ */
 function mapsPoint(v: VisitDay): string {
-  return v.lat != null && v.lon != null
-    ? `${v.lat},${v.lon}`
-    : encodeURIComponent(v.address ? `${v.clientName}, ${v.address}` : `${v.clientName}, ${v.town}, Belgium`)
+  if (v.address) return encodeURIComponent(`${v.clientName}, ${v.address}`)
+  if (v.lat != null && v.lon != null) return `${v.lat},${v.lon}`
+  return encodeURIComponent(`${v.clientName}, ${v.town}, Belgium`)
 }
 
 /**
  * Google Maps turn-by-turn for the whole day. Origin is left to "your current
- * location"; stops become waypoints in route order; the last stop is the
- * destination. (Google free routing caps waypoints, so very long days are
- * truncated to the first stops.)
+ * location"; client stops (and any charging stops, inserted in route order)
+ * become waypoints; the last point is the destination. Consecutive duplicate
+ * points are dropped, and the list is capped at Google's free waypoint limit.
  */
-function dayRouteUrl(visits: VisitDay[]): string {
+function dayRouteUrl(visits: VisitDay[], charges: ChargeStop[] = []): string {
   if (!visits.length) return '#'
-  const pts = visits.map(mapsPoint)
-  const MAX_WAYPOINTS = 9
-  const trimmed = pts.length > MAX_WAYPOINTS + 1 ? pts.slice(0, MAX_WAYPOINTS + 1) : pts
+  const pts: string[] = []
+  for (const v of visits) {
+    pts.push(mapsPoint(v))
+    const ch = charges.find(c => c.afterVisitId === v.id)
+    if (ch) pts.push(`${ch.lat},${ch.lon}`)   // charging station as a real stop
+  }
+  // Collapse repeats (e.g. several clients sharing one street address).
+  const dedup = pts.filter((p, i) => i === 0 || p !== pts[i - 1])
+  const MAX = 10
+  const trimmed = dedup.length > MAX ? dedup.slice(0, MAX) : dedup
   const destination = trimmed[trimmed.length - 1]
   const waypoints = trimmed.slice(0, -1).join('|')
   let url = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`
@@ -296,12 +310,12 @@ export function PlanViewer({
                         )}
                         {day.visits.length > 0 && (
                           <a
-                            href={dayRouteUrl(day.visits)}
+                            href={dayRouteUrl(day.visits, chargeByDate[day.date])}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-lg font-semibold transition-colors"
-                            title="Navigate the whole day in Google Maps"
+                            title="Navigate the whole day (clients + charging) in Google Maps"
                           >
                             <Navigation className="h-3.5 w-3.5" />
                             <span className="hidden sm:inline">Navigate</span>
