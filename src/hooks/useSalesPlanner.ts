@@ -34,6 +34,8 @@ export function useSalesPlanner(userId?: string) {
   const [data, setData] = useLocalStorage<Client[]>('salesPlanner.data', [])
   const [plan, setPlan] = useLocalStorage<DailyPlan[]>('salesPlanner.plan', [])
   const [homeAddress, setHomeAddress] = useLocalStorage('salesPlanner.homeAddress', 'Bruxelles')
+  // Evening return point; empty = round trip back to the start.
+  const [returnAddress, setReturnAddress] = useLocalStorage('salesPlanner.returnAddress', '')
   const [visitsPerDay, setVisitsPerDay] = useLocalStorage('salesPlanner.visitsPerDay', 7)
   const [darkMode, setDarkMode] = useLocalStorage('salesPlanner.darkMode', false)
   // List-view horizon (weeks shown before the rest collapses into "Backlog"); 0 = all.
@@ -105,10 +107,11 @@ export function useSalesPlanner(userId?: string) {
     setFilter('all')
     const homeCoords = getCityCoordinates(homeAddress)
     if (homeCoords) {
-      const newPlan = generatePlan(clients, homeCoords, visitsPerDay, adminDays, maxKmPerDay)
+      const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+      const newPlan = generatePlan(clients, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end)
       setPlan(newPlan)
     }
-  }, [homeAddress, visitsPerDay, adminDays, maxKmPerDay])
+  }, [homeAddress, returnAddress, visitsPerDay, adminDays, maxKmPerDay])
 
   // Clear all loaded clients and the plan (also wipes persisted copies).
   const clearAll = useCallback(() => {
@@ -127,18 +130,22 @@ export function useSalesPlanner(userId?: string) {
       // (fresh data, migrated legacy state, or a cleared plan).
       if (data.length > 0 && plan.length === 0) {
         const homeCoords = getCityCoordinates(homeAddress)
-        if (homeCoords) setPlan(generatePlan(data, homeCoords, visitsPerDay, adminDays, maxKmPerDay))
+        if (homeCoords) {
+          const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+          setPlan(generatePlan(data, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
+        }
       } else if (plan.length > 0) {
         // Refresh a restored plan: always re-date its buckets onto the canonical
         // Mon–Fri workday sequence (so the work-week rule + admin days are applied
         // uniformly, not just when dates drifted into the past), and recompute
         // route metrics. Bucket grouping, order and ids — i.e. manual edits — kept.
         const homeCoords = getCityCoordinates(homeAddress)
+        const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
         setPlan(prev => {
           let next = rollForwardDates(prev, new Date(), adminDays)
           if (homeCoords) {
             next = next.map(day => {
-              const r = recomputeDay(day.visits, homeCoords, false)
+              const r = recomputeDay(day.visits, homeCoords, false, end || homeCoords)
               return { ...day, visits: r.visits, totalKm: r.totalKm }
             })
           }
@@ -150,19 +157,21 @@ export function useSalesPlanner(userId?: string) {
     if (data.length > 0) {
       const homeCoords = getCityCoordinates(homeAddress)
       if (homeCoords) {
-        const newPlan = generatePlan(data, homeCoords, visitsPerDay, adminDays, maxKmPerDay)
+        const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+        const newPlan = generatePlan(data, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end)
         setPlan(newPlan)
       }
     }
-  }, [homeAddress, visitsPerDay, maxKmPerDay])
+  }, [homeAddress, returnAddress, visitsPerDay, maxKmPerDay])
 
   const regeneratePlan = useCallback(() => {
     const homeCoords = getCityCoordinates(homeAddress)
     if (homeCoords && data.length > 0) {
-      const newPlan = generatePlan(data, homeCoords, visitsPerDay, adminDays, maxKmPerDay)
+      const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+      const newPlan = generatePlan(data, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end)
       setPlan(newPlan)
     }
-  }, [data, homeAddress, visitsPerDay, adminDays, maxKmPerDay])
+  }, [data, homeAddress, returnAddress, visitsPerDay, adminDays, maxKmPerDay])
 
   // Mark/unmark a day as admin. Visits reflow onto the next free workdays,
   // preserving order, ids and manual edits (no full regeneration).
@@ -252,9 +261,10 @@ export function useSalesPlanner(userId?: string) {
       if (!visitToMove) return prev
 
       const home = getCityCoordinates(homeAddress)
+      const end = (returnAddress && getCityCoordinates(returnAddress)) || home || undefined
       const apply = (day: DailyPlan, visits: VisitDay[], reoptimize: boolean): DailyPlan => {
         if (!home) return { ...day, visits }
-        const r = recomputeDay(visits, home, reoptimize)
+        const r = recomputeDay(visits, home, reoptimize, end || home)
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       }
 
@@ -269,25 +279,27 @@ export function useSalesPlanner(userId?: string) {
         return day
       })
     })
-  }, [homeAddress])
+  }, [homeAddress, returnAddress])
 
   const removeVisit = useCallback((date: string, visitId: string) => {
     const home = getCityCoordinates(homeAddress)
+    const end = (returnAddress && getCityCoordinates(returnAddress)) || home
     setPlan(prev =>
       prev.map(day => {
         if (day.date !== date) return day
         const visits = day.visits.filter(v => v.id !== visitId)
         if (!home) return { ...day, visits }
-        const r = recomputeDay(visits, home, false)
+        const r = recomputeDay(visits, home, false, end || home)
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
-  }, [homeAddress])
+  }, [homeAddress, returnAddress])
 
   // Reorder a visit within the same day by dropping it onto another visit's slot.
   const reorderVisit = useCallback((date: string, draggedId: string, targetId: string) => {
     if (draggedId === targetId) return
     const home = getCityCoordinates(homeAddress)
+    const end = (returnAddress && getCityCoordinates(returnAddress)) || home
     setPlan(prev =>
       prev.map(day => {
         if (day.date !== date) return day
@@ -299,25 +311,26 @@ export function useSalesPlanner(userId?: string) {
         visits.splice(to, 0, moved)
         // Keep the user's chosen order, just re-sequence times/distances.
         if (!home) return { ...day, visits }
-        const r = recomputeDay(visits, home, false)
+        const r = recomputeDay(visits, home, false, end || home)
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
-  }, [homeAddress])
+  }, [homeAddress, returnAddress])
 
   // Re-optimise a single day's driving route (nearest-neighbour + 2-opt) after
   // manual edits. Visit ids are preserved, so notes/completion/voice stay linked.
   const reoptimizeDay = useCallback((date: string) => {
     const home = getCityCoordinates(homeAddress)
     if (!home) return
+    const end = (returnAddress && getCityCoordinates(returnAddress)) || home
     setPlan(prev =>
       prev.map(day => {
         if (day.date !== date) return day
-        const r = recomputeDay(day.visits, home, true)
+        const r = recomputeDay(day.visits, home, true, end)
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
-  }, [homeAddress])
+  }, [homeAddress, returnAddress])
 
   const updateVisit = useCallback((date: string, updatedVisit: VisitDay) => {
     setPlan(prev =>
@@ -342,6 +355,7 @@ export function useSalesPlanner(userId?: string) {
     data,
     plan,
     homeAddress,
+    returnAddress,
     visitsPerDay,
     maxKmPerDay,
     vehicleType,
@@ -351,7 +365,7 @@ export function useSalesPlanner(userId?: string) {
     adminDays: adminDaysArr,
     completed: completedVisitsArr,
     notes,
-  }), [data, plan, homeAddress, visitsPerDay, maxKmPerDay, vehicleType, evRangeKm, carModel, darkMode, adminDaysArr, completedVisitsArr, notes])
+  }), [data, plan, homeAddress, returnAddress, visitsPerDay, maxKmPerDay, vehicleType, evRangeKm, carModel, darkMode, adminDaysArr, completedVisitsArr, notes])
 
   const cloudStateRef = useRef(cloudState)
   useEffect(() => { cloudStateRef.current = cloudState }, [cloudState])
@@ -391,6 +405,7 @@ export function useSalesPlanner(userId?: string) {
           if (Array.isArray(s.data)) setData(s.data)
           if (Array.isArray(s.plan)) setPlan(s.plan)
           if (typeof s.homeAddress === 'string') setHomeAddress(s.homeAddress)
+          if (typeof s.returnAddress === 'string') setReturnAddress(s.returnAddress)
           if (typeof s.visitsPerDay === 'number') setVisitsPerDay(s.visitsPerDay)
           if (typeof s.maxKmPerDay === 'number') setMaxKmPerDay(s.maxKmPerDay)
           if (s.vehicleType === 'electric' || s.vehicleType === 'combustion') setVehicleType(s.vehicleType)
@@ -485,6 +500,8 @@ export function useSalesPlanner(userId?: string) {
     saveVoiceNote,
     setFilter,
     setHomeAddress,
+    returnAddress,
+    setReturnAddress,
     setVisitsPerDay,
     setShowSettings,
     setDarkMode,

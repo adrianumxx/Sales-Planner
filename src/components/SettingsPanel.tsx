@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
-import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging } from 'lucide-react'
+import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging, Trash2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MAJOR_CITIES } from '../utils/geo'
 
 interface SettingsPanelProps {
   homeAddress: string
+  returnAddress: string
   visitsPerDay: number
   maxKmPerDay: number
   vehicleType: 'combustion' | 'electric'
@@ -12,12 +13,14 @@ interface SettingsPanelProps {
   carModel: string
   darkMode: boolean
   onHomeAddressChange: (address: string) => void
+  onReturnAddressChange: (address: string) => void
   onVisitsPerDayChange: (count: number) => void
   onMaxKmPerDayChange: (km: number) => void
   onVehicleTypeChange: (t: 'combustion' | 'electric') => void
   onEvRangeChange: (km: number) => void
   onCarModelChange: (m: string) => void
   onDarkModeChange: (enabled: boolean) => void
+  onClearAll: () => void
   onClose: () => void
   onRegenerate: () => void
 }
@@ -26,6 +29,7 @@ const MAX_KM_PRESETS = [0, 100, 150, 200, 250]
 
 export function SettingsPanel({
   homeAddress,
+  returnAddress,
   visitsPerDay,
   maxKmPerDay,
   vehicleType,
@@ -33,12 +37,14 @@ export function SettingsPanel({
   carModel,
   darkMode,
   onHomeAddressChange,
+  onReturnAddressChange,
   onVisitsPerDayChange,
   onMaxKmPerDayChange,
   onVehicleTypeChange,
   onEvRangeChange,
   onCarModelChange,
   onDarkModeChange,
+  onClearAll,
   onClose,
 }: SettingsPanelProps) {
   const [hoveredTab, setHoveredTab] = useState<string | null>(null)
@@ -118,7 +124,7 @@ export function SettingsPanel({
           </motion.div>
 
           <div className="p-6 space-y-8">
-            {/* Home Location */}
+            {/* Start & evening return */}
             <motion.div
               variants={sectionVariants}
               initial="hidden"
@@ -127,7 +133,7 @@ export function SettingsPanel({
             >
               <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
                 <MapIcon className="h-4 w-4 text-indigo-600 dark:text-cyan-400" />
-                Home Location
+                Start of day
               </label>
               <input
                 type="text"
@@ -137,13 +143,29 @@ export function SettingsPanel({
                 placeholder="e.g. Charleroi, Mons, La Louvière…"
                 className="w-full px-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 font-medium"
               />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-4">
+                📍 Where each day's route begins.
+              </p>
+
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-2 flex items-center gap-2">
+                <MapIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                Evening return <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                list="major-cities"
+                value={returnAddress}
+                onChange={(e) => onReturnAddressChange(e.target.value)}
+                placeholder="Leave empty to return to the start"
+                className="w-full px-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-300 font-medium"
+              />
               <datalist id="major-cities">
                 {MAJOR_CITIES.map((c) => (
                   <option key={c} value={c} />
                 ))}
               </datalist>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                📍 Starting point for distance and route calculations
+                🏁 Where you need to be by evening — the day's last leg routes here (e.g. an appointment, or a different base).
               </p>
             </motion.div>
 
@@ -339,6 +361,26 @@ export function SettingsPanel({
             >
               <RotateCcw className="h-5 w-5" />
               Save & Close
+            </motion.button>
+
+            {/* Clear all data */}
+            <motion.button
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.55 }}
+              onClick={() => {
+                if (window.confirm('Clear all clients, the plan and your settings? This cannot be undone.')) {
+                  onClearAll()
+                  onClose()
+                }
+              }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full text-red-600 dark:text-red-400 font-semibold py-2.5 rounded-2xl border border-red-200 dark:border-red-800/60 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-300 flex items-center justify-center gap-2 text-sm"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear all data
             </motion.button>
           </div>
         </motion.div>
