@@ -18,6 +18,8 @@ interface CommandBarProps {
   plan: DailyPlan[]
   clients: Client[]
   homeCoords: { lat: number; lon: number }
+  endCoords?: { lat: number; lon: number }
+  blocked?: Set<string>
   visitsPerDay: number
   maxKmPerDay?: number
   onResult: (result: CommandResult | null) => void
@@ -248,11 +250,13 @@ function buildResult(
   clients: Client[],
   homeCoords: { lat: number; lon: number },
   visitsPerDay: number,
-  maxKmPerDay = 0
+  maxKmPerDay = 0,
+  blocked?: Set<string>,
+  endCoords?: { lat: number; lon: number }
 ): CommandResult {
   if (intent.mode === 'area' && intent.city) {
     const { plan: areaPlan, count } = planAreaCoverage(
-      overdueClients(clients, intent.minDays), intent.city.coord, intent.radiusKm, homeCoords, visitsPerDay, undefined, maxKmPerDay
+      overdueClients(clients, intent.minDays), intent.city.coord, intent.radiusKm, homeCoords, visitsPerDay, blocked, maxKmPerDay, endCoords
     )
     let days = areaPlan
     if (intent.scope === 'today') days = areaPlan.slice(0, 1)
@@ -282,10 +286,12 @@ function parseQuery(
   visitsPerDay: number,
   radiusState: number,
   minDaysState: number,
-  maxKmPerDay: number
+  maxKmPerDay: number,
+  blocked?: Set<string>,
+  endCoords?: { lat: number; lon: number }
 ): CommandResult | null {
   const intent = analyze(raw, radiusState, minDaysState)
-  return intent ? buildResult(intent, plan, clients, homeCoords, visitsPerDay, maxKmPerDay) : null
+  return intent ? buildResult(intent, plan, clients, homeCoords, visitsPerDay, maxKmPerDay, blocked, endCoords) : null
 }
 
 // ── Typeahead suggestions ──────────────────────────────────────────────────────
@@ -330,7 +336,7 @@ const EXAMPLES = [
   { text: 'urgent this week', icon: '🔴' },
 ]
 
-export function CommandBar({ plan, clients, homeCoords, visitsPerDay, maxKmPerDay = 0, onResult }: CommandBarProps) {
+export function CommandBar({ plan, clients, homeCoords, endCoords, blocked, visitsPerDay, maxKmPerDay = 0, onResult }: CommandBarProps) {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [focused, setFocused] = useState(false)
@@ -351,8 +357,8 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, maxKmPerDa
   // A non-default min-days filter applies even with no text query.
   useEffect(() => {
     if (!debounced.trim() && minDays === 0) { onResult(null); return }
-    onResult(parseQuery(debounced, plan, clients, homeCoords, visitsPerDay, radius, minDays, maxKmPerDay))
-  }, [debounced, radius, minDays, plan, clients, homeCoords, visitsPerDay, maxKmPerDay, onResult])
+    onResult(parseQuery(debounced, plan, clients, homeCoords, visitsPerDay, radius, minDays, maxKmPerDay, blocked, endCoords))
+  }, [debounced, radius, minDays, plan, clients, homeCoords, endCoords, blocked, visitsPerDay, maxKmPerDay, onResult])
 
   // Live, routing-free interpretation for the inline preview + radius visibility.
   const intent = useMemo(() => analyze(debounced, radius, minDays), [debounced, radius, minDays])
@@ -442,7 +448,7 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, maxKmPerDa
             onKeyDown={handleKeyDown}
             onFocus={() => { setFocused(true); setShowSug(true) }}
             onBlur={() => setFocused(false)}
-            placeholder='Type a city ("Charleroi") or a filter ("urgent this week")'
+            placeholder='City → optimized zone route · words → filter your plan ("urgent today")'
             className="flex-1 py-3 bg-transparent text-sm text-slate-900 dark:text-slate-50 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
           />
           <AnimatePresence>
@@ -524,7 +530,7 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, maxKmPerDa
               {preview.type === 'area'
                 ? <MapPin className="h-3 w-3" />
                 : <Search className="h-3 w-3" />}
-              {preview.type === 'area' ? 'Coverage' : 'Filter'}
+              {preview.type === 'area' ? 'Builds a zone route' : 'Filters your plan'}
             </span>
             <span className="text-slate-600 dark:text-slate-300">{preview.text}</span>
             <span className={`font-semibold ${preview.empty ? 'text-rose-500' : 'text-slate-900 dark:text-slate-100'}`}>
