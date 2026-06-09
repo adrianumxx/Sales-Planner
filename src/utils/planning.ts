@@ -47,6 +47,52 @@ function nnOrder<T extends Located>(items: T[], home: Pt): T[] {
   return ordered
 }
 
+/** Closed-tour length: home → stop1 → … → stopN → home (straight-line km). */
+function tourKm<T extends Located>(items: T[], home: Pt): number {
+  let prev: Pt = home
+  let sum = 0
+  for (const it of items) {
+    const p = coordOf(it) ?? prev
+    sum += getDistance(prev.lat, prev.lon, p.lat, p.lon)
+    prev = p
+  }
+  if (items.length) sum += getDistance(prev.lat, prev.lon, home.lat, home.lon)
+  return sum
+}
+
+/**
+ * 2-opt improvement: repeatedly reverse route segments while that shortens the
+ * closed tour. Removes the crossings a greedy nearest-neighbour route leaves
+ * behind. Day sizes are small, so the O(n²) sweep is cheap.
+ */
+function twoOpt<T extends Located>(items: T[], home: Pt): T[] {
+  if (items.length < 4) return items
+  let best = [...items]
+  let bestKm = tourKm(best, home)
+  let improved = true
+  let guard = 0
+  while (improved && guard++ < 60) {
+    improved = false
+    for (let i = 0; i < best.length - 1; i++) {
+      for (let k = i + 1; k < best.length; k++) {
+        const candidate = [
+          ...best.slice(0, i),
+          ...best.slice(i, k + 1).reverse(),
+          ...best.slice(k + 1),
+        ]
+        const km = tourKm(candidate, home)
+        if (km + 1e-6 < bestKm) { best = candidate; bestKm = km; improved = true }
+      }
+    }
+  }
+  return best
+}
+
+/** Best route we can cheaply find: nearest-neighbour seed, then 2-opt polish. */
+function optimizeRoute<T extends Located>(items: T[], home: Pt): T[] {
+  return twoOpt(nnOrder(items, home), home)
+}
+
 /**
  * Real route metrics for an ordered list of stops: each leg is prev→next
  * (home→first for the first stop), and the total includes the drive back home.
@@ -99,7 +145,7 @@ function buildPlan(clients: Client[], homeCoords: Pt, visitsPerDay: number, bloc
 
   clientsByDay.forEach((bucket, dayIndex) => {
     const dateStr = dates[dayIndex]
-    const ordered = nnOrder(bucket, homeCoords)
+    const ordered = optimizeRoute(bucket, homeCoords)
     const slots = buildTimeSlots(ordered.length)
     const { legs, totalKm } = routeFromHome(ordered, homeCoords)
 
@@ -139,7 +185,7 @@ export function recomputeDay(
   homeCoords: Pt,
   reoptimize = false
 ): { visits: VisitDay[]; totalKm: number } {
-  const ordered = reoptimize ? nnOrder(visits, homeCoords) : visits
+  const ordered = reoptimize ? optimizeRoute(visits, homeCoords) : visits
   const slots = buildTimeSlots(ordered.length)
   const { legs, totalKm } = routeFromHome(ordered, homeCoords)
   const out = ordered.map((v, i) => ({
@@ -193,15 +239,44 @@ export function planAreaCoverage(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Chunk the already priority-sorted clients into day-sized buckets, strictly in
- * order. The most-overdue clients fill day 1, the next batch day 2, and so on —
- * a low-overdue account never jumps ahead of a more-overdue one just because
- * it's nearby. (Within-day driving order is optimised separately.)
+ * Group clients into day-sized buckets that are BOTH priority-correct and
+ * geographically tight — the core need for a rep who drives a lot.
+ *
+ * Clients are split into urgency tiers (urgent → attention → ok) which are
+ * filled in strict order, so a low-tier account can never be scheduled before
+ * a higher-tier one. WITHIN each tier, every day is seeded by the most-overdue
+ * remaining client and filled with its nearest geographic neighbours — so each
+ * day is a compact zone instead of stops scattered across the region.
  */
 function groupByDay(clients: Client[], perDay: number): Client[][] {
+  const tiers: Record<string, Client[]> = { urgent: [], attention: [], ok: [] }
+  for (const c of clients) (tiers[c.urgency ?? 'ok'] ?? tiers.ok).push(c)
+
   const days: Client[][] = []
-  for (let i = 0; i < clients.length; i += perDay) {
-    days.push(clients.slice(i, i + perDay))
+  for (const tier of ['urgent', 'attention', 'ok'] as const) {
+    // pool stays in overdue order, so each new seed is the most-overdue left
+    const pool = tiers[tier]
+    while (pool.length > 0) {
+      const seed = pool.shift()!
+      const bucket: Client[] = [seed]
+      const ref = coordOf(seed)
+
+      while (bucket.length < perDay && pool.length > 0) {
+        let idx = 0
+        if (ref) {
+          let best = Infinity
+          pool.forEach((c, i) => {
+            const p = coordOf(c)
+            if (p) {
+              const d = getDistance(ref.lat, ref.lon, p.lat, p.lon)
+              if (d < best) { best = d; idx = i }
+            }
+          })
+        }
+        bucket.push(pool.splice(idx, 1)[0])
+      }
+      days.push(bucket)
+    }
   }
   return days
 }
