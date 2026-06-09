@@ -290,10 +290,16 @@ export function PlanViewer({
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
                         <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
                         <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.totalKm}km</span>
-                        {(chargeByDate[day.date]?.length ?? 0) > 0 && (
-                          <span className="flex items-center gap-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-lg font-semibold" title="Charging stop(s) recommended">
-                            <Zap className="h-3.5 w-3.5" />{chargeByDate[day.date].length}
-                          </span>
+                        {evRangeKm > 0 && (
+                          (chargeByDate[day.date]?.length ?? 0) > 0 ? (
+                            <span className="flex items-center gap-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-lg font-semibold" title="Charging stop(s) recommended on this day">
+                              <Zap className="h-3.5 w-3.5" />{chargeByDate[day.date].length} charge
+                            </span>
+                          ) : (
+                            <span className="hidden sm:flex items-center gap-0.5 bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-lg font-medium" title={`Within range — ${day.totalKm} of ${evRangeKm} km`}>
+                              <Zap className="h-3.5 w-3.5" />in range
+                            </span>
+                          )
                         )}
                         <span className="hidden sm:inline bg-slate-200/70 dark:bg-slate-700/60 px-2 py-0.5 rounded-lg font-medium" title="Estimated driving time (round trip)">
                           {driveTimeLabel(day.totalKm)}
