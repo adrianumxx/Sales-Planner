@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   CheckCircle2, Circle, MapPin, Clock, Edit2, ExternalLink, History,
-  ChevronDown, GripVertical, Pencil, Archive, Route, Navigation,
+  ChevronDown, GripVertical, Pencil, Archive, Route, Navigation, Wand2,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay } from '../types'
@@ -58,6 +58,7 @@ interface PlanViewerProps {
   onEditVisit?: (visit: VisitDay, date: string) => void
   onMoveVisit?: (visit: VisitDay, fromDate: string, toDate: string) => void
   onReorderVisit?: (date: string, draggedId: string, targetId: string) => void
+  onReoptimizeDay?: (date: string) => void
   /** Weeks shown before the rest collapses into a Backlog section. 0 = show all. */
   horizonWeeks?: number
 }
@@ -123,6 +124,7 @@ export function PlanViewer({
   onEditVisit,
   onMoveVisit,
   onReorderVisit,
+  onReoptimizeDay,
   horizonWeeks = 0,
 }: PlanViewerProps) {
   const handleSaveVoiceNote = onSaveVoiceNote ?? (() => {})
@@ -230,6 +232,16 @@ export function PlanViewer({
                         <span className="hidden sm:inline bg-slate-200/70 dark:bg-slate-700/60 px-2 py-0.5 rounded-lg font-medium" title="Estimated driving time (round trip)">
                           {driveTimeLabel(day.totalKm)}
                         </span>
+                        {editable && onReoptimizeDay && day.visits.length > 1 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onReoptimizeDay(day.date) }}
+                            className="flex items-center gap-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded-lg font-semibold transition-colors"
+                            title="Re-optimize this day's driving route"
+                          >
+                            <Wand2 className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Optimize</span>
+                          </button>
+                        )}
                         {day.visits.length > 0 && (
                           <a
                             href={dayRouteUrl(day.visits)}

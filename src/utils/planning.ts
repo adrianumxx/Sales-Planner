@@ -124,7 +124,13 @@ function prioritize(clients: Client[]): Client[] {
 }
 
 /** Core pipeline shared by full-plan and area-coverage generation. */
-function buildPlan(clients: Client[], homeCoords: Pt, visitsPerDay: number, blocked?: Set<string>): DailyPlan[] {
+function buildPlan(
+  clients: Client[],
+  homeCoords: Pt,
+  visitsPerDay: number,
+  blocked?: Set<string>,
+  maxKmPerDay = 0
+): DailyPlan[] {
   if (!clients.length) return []
 
   // 1. Compute urgency from days-overdue
@@ -136,8 +142,9 @@ function buildPlan(clients: Client[], homeCoords: Pt, visitsPerDay: number, bloc
   // 2. Priority order
   const sorted = prioritize(enriched)
 
-  // 3. Cluster into days (most-overdue account seeds each day, filled by nearest)
-  const clientsByDay = groupByDay(sorted, visitsPerDay)
+  // 3. Cluster into days (most-overdue account seeds each day, filled by nearest,
+  //    capped by visits/day and — optionally — a max driving distance per day)
+  const clientsByDay = groupByDay(sorted, visitsPerDay, homeCoords, maxKmPerDay)
 
   // 4. Lay each day-bucket onto the next available workdays (Mon–Fri, skipping admin days)
   const dates = nextWorkdays(clientsByDay.length, new Date(), blocked)
@@ -211,9 +218,10 @@ export function generatePlan(
   clients: Client[],
   homeCoords: Pt,
   visitsPerDay: number = 7,
-  blocked?: Set<string>
+  blocked?: Set<string>,
+  maxKmPerDay = 0
 ): DailyPlan[] {
-  return buildPlan(clients, homeCoords, visitsPerDay, blocked)
+  return buildPlan(clients, homeCoords, visitsPerDay, blocked, maxKmPerDay)
 }
 
 /**
@@ -227,13 +235,14 @@ export function planAreaCoverage(
   radiusKm: number,
   homeCoords: Pt,
   visitsPerDay: number = 7,
-  blocked?: Set<string>
+  blocked?: Set<string>,
+  maxKmPerDay = 0
 ): { plan: DailyPlan[]; count: number } {
   const inArea = clients.filter(c => {
     const p = coordOf(c)
     return p ? getDistance(center.lat, center.lon, p.lat, p.lon) <= radiusKm : false
   })
-  return { plan: buildPlan(inArea, homeCoords, visitsPerDay, blocked), count: inArea.length }
+  return { plan: buildPlan(inArea, homeCoords, visitsPerDay, blocked, maxKmPerDay), count: inArea.length }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -248,7 +257,7 @@ export function planAreaCoverage(
  * remaining client and filled with its nearest geographic neighbours — so each
  * day is a compact zone instead of stops scattered across the region.
  */
-function groupByDay(clients: Client[], perDay: number): Client[][] {
+function groupByDay(clients: Client[], perDay: number, home: Pt, maxKm = 0): Client[][] {
   const tiers: Record<string, Client[]> = { urgent: [], attention: [], ok: [] }
   for (const c of clients) (tiers[c.urgency ?? 'ok'] ?? tiers.ok).push(c)
 
@@ -272,6 +281,13 @@ function groupByDay(clients: Client[], perDay: number): Client[][] {
               if (d < best) { best = d; idx = i }
             }
           })
+        }
+        // Driving-distance cap: stop filling the day if the nearest remaining
+        // client would push the day's route past the limit. The seed always
+        // stays (a single visit is never dropped, even if it's a long haul).
+        if (maxKm > 0) {
+          const projected = tourKm(nnOrder([...bucket, pool[idx]], home), home)
+          if (projected > maxKm) break
         }
         bucket.push(pool.splice(idx, 1)[0])
       }

@@ -253,6 +253,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     clients={planner.data}
                     homeCoords={homeCoords}
                     visitsPerDay={planner.visitsPerDay}
+                    maxKmPerDay={planner.maxKmPerDay}
                     onResult={setCommandResult}
                   />
                 </motion.div>
@@ -359,6 +360,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
                     onEditVisit={(visit, date) => setEditingVisit({ visit, date })}
                     onMoveVisit={(visit, fromDate, toDate) => planner.moveVisit(fromDate, toDate, visit.id)}
                     onReorderVisit={planner.reorderVisit}
+                    onReoptimizeDay={planner.reoptimizeDay}
                   />
                 </motion.div>
               )}
@@ -403,9 +405,11 @@ function AppContent({ user, onLogout }: AppContentProps) {
         <SettingsPanel
           homeAddress={planner.homeAddress}
           visitsPerDay={planner.visitsPerDay}
+          maxKmPerDay={planner.maxKmPerDay}
           darkMode={planner.darkMode}
           onHomeAddressChange={planner.setHomeAddress}
           onVisitsPerDayChange={planner.setVisitsPerDay}
+          onMaxKmPerDayChange={planner.setMaxKmPerDay}
           onDarkModeChange={planner.setDarkMode}
           onClose={() => planner.setShowSettings(false)}
           onRegenerate={planner.regeneratePlan}

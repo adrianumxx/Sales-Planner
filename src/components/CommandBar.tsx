@@ -19,6 +19,7 @@ interface CommandBarProps {
   clients: Client[]
   homeCoords: { lat: number; lon: number }
   visitsPerDay: number
+  maxKmPerDay?: number
   onResult: (result: CommandResult | null) => void
 }
 
@@ -246,11 +247,12 @@ function buildResult(
   plan: DailyPlan[],
   clients: Client[],
   homeCoords: { lat: number; lon: number },
-  visitsPerDay: number
+  visitsPerDay: number,
+  maxKmPerDay = 0
 ): CommandResult {
   if (intent.mode === 'area' && intent.city) {
     const { plan: areaPlan, count } = planAreaCoverage(
-      overdueClients(clients, intent.minDays), intent.city.coord, intent.radiusKm, homeCoords, visitsPerDay
+      overdueClients(clients, intent.minDays), intent.city.coord, intent.radiusKm, homeCoords, visitsPerDay, undefined, maxKmPerDay
     )
     let days = areaPlan
     if (intent.scope === 'today') days = areaPlan.slice(0, 1)
@@ -279,10 +281,11 @@ function parseQuery(
   homeCoords: { lat: number; lon: number },
   visitsPerDay: number,
   radiusState: number,
-  minDaysState: number
+  minDaysState: number,
+  maxKmPerDay: number
 ): CommandResult | null {
   const intent = analyze(raw, radiusState, minDaysState)
-  return intent ? buildResult(intent, plan, clients, homeCoords, visitsPerDay) : null
+  return intent ? buildResult(intent, plan, clients, homeCoords, visitsPerDay, maxKmPerDay) : null
 }
 
 // ── Typeahead suggestions ──────────────────────────────────────────────────────
@@ -327,7 +330,7 @@ const EXAMPLES = [
   { text: 'urgent this week', icon: '🔴' },
 ]
 
-export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }: CommandBarProps) {
+export function CommandBar({ plan, clients, homeCoords, visitsPerDay, maxKmPerDay = 0, onResult }: CommandBarProps) {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [focused, setFocused] = useState(false)
@@ -348,8 +351,8 @@ export function CommandBar({ plan, clients, homeCoords, visitsPerDay, onResult }
   // A non-default min-days filter applies even with no text query.
   useEffect(() => {
     if (!debounced.trim() && minDays === 0) { onResult(null); return }
-    onResult(parseQuery(debounced, plan, clients, homeCoords, visitsPerDay, radius, minDays))
-  }, [debounced, radius, minDays, plan, clients, homeCoords, visitsPerDay, onResult])
+    onResult(parseQuery(debounced, plan, clients, homeCoords, visitsPerDay, radius, minDays, maxKmPerDay))
+  }, [debounced, radius, minDays, plan, clients, homeCoords, visitsPerDay, maxKmPerDay, onResult])
 
   // Live, routing-free interpretation for the inline preview + radius visibility.
   const intent = useMemo(() => analyze(debounced, radius, minDays), [debounced, radius, minDays])
