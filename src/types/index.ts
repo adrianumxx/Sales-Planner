@@ -10,6 +10,8 @@ export interface Client {
   postalCode?: string;
   lat?: number;
   lon?: number;
+  /** True once we've attempted precise (street-level) geocoding via Google Maps. */
+  geocoded?: boolean;
   daysSinceLastVisit?: number;
 }
 
