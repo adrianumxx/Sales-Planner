@@ -368,7 +368,9 @@ export function CommandBar({ plan, clients, homeCoords, endCoords, blocked, visi
   )
 
   const suggestions = useMemo(() => buildSuggestions(query, clients), [query, clients])
-  const showRadius = !query.trim() || intent?.mode === 'area'
+  // Keep the landing calm: the refine controls (radius / not-visited) only appear
+  // once the user engages the search, not on first load.
+  const showControls = focused || !!query.trim() || minDays > 0
 
   // Close suggestions on outside click.
   useEffect(() => {
@@ -550,54 +552,58 @@ export function CommandBar({ plan, clients, homeCoords, endCoords, blocked, visi
         )}
       </AnimatePresence>
 
-      {/* Coverage radius — only relevant when an area (city) is targeted */}
+      {/* Refine controls (radius + not-visited) — only once the search is engaged,
+          so the landing stays calm. onMouseDown keeps focus while clicking chips. */}
       <AnimatePresence initial={false}>
-        {showRadius && (
+        {showControls && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="flex items-center gap-2 flex-wrap overflow-hidden"
+            className="space-y-2 overflow-hidden"
           >
-            <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-              <MapPin className="h-3 w-3" /> Coverage radius:
-            </span>
-            {RADII.map(r => (
-              <button
-                key={r}
-                onClick={() => handleRadius(r)}
-                className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
-                  radius === r
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
-                }`}
-              >
-                {r}km
-              </button>
-            ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <MapPin className="h-3 w-3" /> Coverage radius:
+              </span>
+              {RADII.map(r => (
+                <button
+                  key={r}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleRadius(r)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                    radius === r
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+                  }`}
+                >
+                  {r}km
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <Clock className="h-3 w-3" /> Not visited for:
+              </span>
+              {MIN_DAYS_PRESETS.map(p => (
+                <button
+                  key={p.value}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setMinDays(p.value)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                    minDays === p.value
+                      ? 'bg-rose-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-rose-100 dark:hover:bg-rose-900/40'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Min days since last visit — filters both coverage and plain filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-          <Clock className="h-3 w-3" /> Not visited for:
-        </span>
-        {MIN_DAYS_PRESETS.map(p => (
-          <button
-            key={p.value}
-            onClick={() => setMinDays(p.value)}
-            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
-              minDays === p.value
-                ? 'bg-rose-600 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-rose-100 dark:hover:bg-rose-900/40'
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
 
       {/* Example chips */}
       <AnimatePresence>
