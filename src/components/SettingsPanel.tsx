@@ -6,20 +6,26 @@ import { MAJOR_CITIES } from '../utils/geo'
 interface SettingsPanelProps {
   homeAddress: string
   visitsPerDay: number
+  maxKmPerDay: number
   darkMode: boolean
   onHomeAddressChange: (address: string) => void
   onVisitsPerDayChange: (count: number) => void
+  onMaxKmPerDayChange: (km: number) => void
   onDarkModeChange: (enabled: boolean) => void
   onClose: () => void
   onRegenerate: () => void
 }
 
+const MAX_KM_PRESETS = [0, 100, 150, 200, 250]
+
 export function SettingsPanel({
   homeAddress,
   visitsPerDay,
+  maxKmPerDay,
   darkMode,
   onHomeAddressChange,
   onVisitsPerDayChange,
+  onMaxKmPerDayChange,
   onDarkModeChange,
   onClose,
 }: SettingsPanelProps) {
@@ -165,6 +171,37 @@ export function SettingsPanel({
                 <span>Light schedule</span>
                 <span>Heavy schedule</span>
               </div>
+            </motion.div>
+
+            {/* Max km per day */}
+            <motion.div
+              variants={sectionVariants}
+              initial="hidden"
+              animate="show"
+              transition={{ delay: 0.35 }}
+            >
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                Max driving per day
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {MAX_KM_PRESETS.map((km) => (
+                  <button
+                    key={km}
+                    onClick={() => onMaxKmPerDayChange(km)}
+                    className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                      maxKmPerDay === km
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/40'
+                    }`}
+                  >
+                    {km === 0 ? 'No cap' : `${km} km`}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                🚗 Caps each day's round-trip driving for realistic days. A single far client is never dropped.
+              </p>
             </motion.div>
 
             {/* Dark Mode Toggle */}
