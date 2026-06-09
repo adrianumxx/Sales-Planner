@@ -47,28 +47,28 @@ function nnOrder<T extends Located>(items: T[], home: Pt): T[] {
   return ordered
 }
 
-/** Closed-tour length: home → stop1 → … → stopN → home (straight-line km). */
-function tourKm<T extends Located>(items: T[], home: Pt): number {
-  let prev: Pt = home
+/** Path length: start → stop1 → … → stopN → end (straight-line km). */
+function tourKm<T extends Located>(items: T[], start: Pt, end: Pt = start): number {
+  let prev: Pt = start
   let sum = 0
   for (const it of items) {
     const p = coordOf(it) ?? prev
     sum += getDistance(prev.lat, prev.lon, p.lat, p.lon)
     prev = p
   }
-  if (items.length) sum += getDistance(prev.lat, prev.lon, home.lat, home.lon)
+  if (items.length) sum += getDistance(prev.lat, prev.lon, end.lat, end.lon)
   return sum
 }
 
 /**
  * 2-opt improvement: repeatedly reverse route segments while that shortens the
- * closed tour. Removes the crossings a greedy nearest-neighbour route leaves
- * behind. Day sizes are small, so the O(n²) sweep is cheap.
+ * start→…→end path. Removes the crossings a greedy nearest-neighbour route
+ * leaves behind. Day sizes are small, so the O(n²) sweep is cheap.
  */
-function twoOpt<T extends Located>(items: T[], home: Pt): T[] {
+function twoOpt<T extends Located>(items: T[], start: Pt, end: Pt = start): T[] {
   if (items.length < 4) return items
   let best = [...items]
-  let bestKm = tourKm(best, home)
+  let bestKm = tourKm(best, start, end)
   let improved = true
   let guard = 0
   while (improved && guard++ < 60) {
@@ -80,7 +80,7 @@ function twoOpt<T extends Located>(items: T[], home: Pt): T[] {
           ...best.slice(i, k + 1).reverse(),
           ...best.slice(k + 1),
         ]
-        const km = tourKm(candidate, home)
+        const km = tourKm(candidate, start, end)
         if (km + 1e-6 < bestKm) { best = candidate; bestKm = km; improved = true }
       }
     }
@@ -89,17 +89,18 @@ function twoOpt<T extends Located>(items: T[], home: Pt): T[] {
 }
 
 /** Best route we can cheaply find: nearest-neighbour seed, then 2-opt polish. */
-function optimizeRoute<T extends Located>(items: T[], home: Pt): T[] {
-  return twoOpt(nnOrder(items, home), home)
+function optimizeRoute<T extends Located>(items: T[], start: Pt, end: Pt = start): T[] {
+  return twoOpt(nnOrder(items, start), start, end)
 }
 
 /**
  * Real route metrics for an ordered list of stops: each leg is prev→next
- * (home→first for the first stop), and the total includes the drive back home.
- * `legs[i]` is the distance driven to reach stop i — not the home→stop distance.
+ * (start→first for the first stop), and the total includes the final drive to
+ * `end` (the evening return point). `legs[i]` is the distance driven to reach
+ * stop i — not the start→stop distance.
  */
-function routeFromHome<T extends Located>(items: T[], home: Pt): { legs: number[]; totalKm: number } {
-  let prev: Pt = { lat: home.lat, lon: home.lon }
+function routeFromHome<T extends Located>(items: T[], start: Pt, end: Pt = start): { legs: number[]; totalKm: number } {
+  let prev: Pt = { lat: start.lat, lon: start.lon }
   const legs: number[] = []
   for (const it of items) {
     const p = coordOf(it) ?? prev
@@ -107,7 +108,7 @@ function routeFromHome<T extends Located>(items: T[], home: Pt): { legs: number[
     legs.push(Math.round(leg * 10) / 10)
     prev = p
   }
-  const back = items.length ? getDistance(prev.lat, prev.lon, home.lat, home.lon) : 0
+  const back = items.length ? getDistance(prev.lat, prev.lon, end.lat, end.lon) : 0
   const sum = legs.reduce((s, x) => s + x, 0) + back
   return { legs, totalKm: Math.round(sum * 10) / 10 }
 }
@@ -129,7 +130,8 @@ function buildPlan(
   homeCoords: Pt,
   visitsPerDay: number,
   blocked?: Set<string>,
-  maxKmPerDay = 0
+  maxKmPerDay = 0,
+  endCoords: Pt = homeCoords
 ): DailyPlan[] {
   if (!clients.length) return []
 
@@ -144,7 +146,7 @@ function buildPlan(
 
   // 3. Cluster into days (most-overdue account seeds each day, filled by nearest,
   //    capped by visits/day and — optionally — a max driving distance per day)
-  const clientsByDay = groupByDay(sorted, visitsPerDay, homeCoords, maxKmPerDay)
+  const clientsByDay = groupByDay(sorted, visitsPerDay, homeCoords, maxKmPerDay, endCoords)
 
   // 4. Lay each day-bucket onto the next available workdays (Mon–Fri, skipping admin days)
   const dates = nextWorkdays(clientsByDay.length, new Date(), blocked)
@@ -152,9 +154,9 @@ function buildPlan(
 
   clientsByDay.forEach((bucket, dayIndex) => {
     const dateStr = dates[dayIndex]
-    const ordered = optimizeRoute(bucket, homeCoords)
+    const ordered = optimizeRoute(bucket, homeCoords, endCoords)
     const slots = buildTimeSlots(ordered.length)
-    const { legs, totalKm } = routeFromHome(ordered, homeCoords)
+    const { legs, totalKm } = routeFromHome(ordered, homeCoords, endCoords)
 
     const visits: VisitDay[] = ordered.map((client, idx) => ({
       id:            `${dateStr}-${idx}`,
@@ -190,11 +192,12 @@ function buildPlan(
 export function recomputeDay(
   visits: VisitDay[],
   homeCoords: Pt,
-  reoptimize = false
+  reoptimize = false,
+  endCoords: Pt = homeCoords
 ): { visits: VisitDay[]; totalKm: number } {
-  const ordered = reoptimize ? optimizeRoute(visits, homeCoords) : visits
+  const ordered = reoptimize ? optimizeRoute(visits, homeCoords, endCoords) : visits
   const slots = buildTimeSlots(ordered.length)
-  const { legs, totalKm } = routeFromHome(ordered, homeCoords)
+  const { legs, totalKm } = routeFromHome(ordered, homeCoords, endCoords)
   const out = ordered.map((v, i) => ({
     ...v,
     timeSlot: slots[i % slots.length],
@@ -219,9 +222,10 @@ export function generatePlan(
   homeCoords: Pt,
   visitsPerDay: number = 7,
   blocked?: Set<string>,
-  maxKmPerDay = 0
+  maxKmPerDay = 0,
+  endCoords: Pt = homeCoords
 ): DailyPlan[] {
-  return buildPlan(clients, homeCoords, visitsPerDay, blocked, maxKmPerDay)
+  return buildPlan(clients, homeCoords, visitsPerDay, blocked, maxKmPerDay, endCoords)
 }
 
 /**
@@ -236,13 +240,14 @@ export function planAreaCoverage(
   homeCoords: Pt,
   visitsPerDay: number = 7,
   blocked?: Set<string>,
-  maxKmPerDay = 0
+  maxKmPerDay = 0,
+  endCoords: Pt = homeCoords
 ): { plan: DailyPlan[]; count: number } {
   const inArea = clients.filter(c => {
     const p = coordOf(c)
     return p ? getDistance(center.lat, center.lon, p.lat, p.lon) <= radiusKm : false
   })
-  return { plan: buildPlan(inArea, homeCoords, visitsPerDay, blocked, maxKmPerDay), count: inArea.length }
+  return { plan: buildPlan(inArea, homeCoords, visitsPerDay, blocked, maxKmPerDay, endCoords), count: inArea.length }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -257,7 +262,7 @@ export function planAreaCoverage(
  * remaining client and filled with its nearest geographic neighbours — so each
  * day is a compact zone instead of stops scattered across the region.
  */
-function groupByDay(clients: Client[], perDay: number, home: Pt, maxKm = 0): Client[][] {
+function groupByDay(clients: Client[], perDay: number, home: Pt, maxKm = 0, end: Pt = home): Client[][] {
   const tiers: Record<string, Client[]> = { urgent: [], attention: [], ok: [] }
   for (const c of clients) (tiers[c.urgency ?? 'ok'] ?? tiers.ok).push(c)
 
@@ -286,7 +291,7 @@ function groupByDay(clients: Client[], perDay: number, home: Pt, maxKm = 0): Cli
         // client would push the day's route past the limit. The seed always
         // stays (a single visit is never dropped, even if it's a long haul).
         if (maxKm > 0) {
-          const projected = tourKm(nnOrder([...bucket, pool[idx]], home), home)
+          const projected = tourKm(nnOrder([...bucket, pool[idx]], home), home, end)
           if (projected > maxKm) break
         }
         bucket.push(pool.splice(idx, 1)[0])

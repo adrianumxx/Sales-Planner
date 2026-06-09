@@ -405,6 +405,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
       {planner.showSettings && (
         <SettingsPanel
           homeAddress={planner.homeAddress}
+          returnAddress={planner.returnAddress}
           visitsPerDay={planner.visitsPerDay}
           maxKmPerDay={planner.maxKmPerDay}
           vehicleType={planner.vehicleType}
@@ -412,12 +413,14 @@ function AppContent({ user, onLogout }: AppContentProps) {
           carModel={planner.carModel}
           darkMode={planner.darkMode}
           onHomeAddressChange={planner.setHomeAddress}
+          onReturnAddressChange={planner.setReturnAddress}
           onVisitsPerDayChange={planner.setVisitsPerDay}
           onMaxKmPerDayChange={planner.setMaxKmPerDay}
           onVehicleTypeChange={planner.setVehicleType}
           onEvRangeChange={planner.setEvRangeKm}
           onCarModelChange={planner.setCarModel}
           onDarkModeChange={planner.setDarkMode}
+          onClearAll={planner.clearAll}
           onClose={() => planner.setShowSettings(false)}
           onRegenerate={planner.regeneratePlan}
         />
