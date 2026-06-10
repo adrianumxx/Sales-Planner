@@ -32,7 +32,10 @@ function loadGoogleMapsSDK(): Promise<void> {
   if (loadPromise) return loadPromise
   loadPromise = new Promise<void>((resolve, reject) => {
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&libraries=geocoding,places&loading=async`
+    // Only the core + geocoding here; the (heavier, separately-billed) places
+    // library is loaded on demand via importLibrary so it can never slow down or
+    // break geocoding.
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&libraries=geocoding&loading=async`
     s.async = true
     s.defer = true
     s.onload = () => resolve()
@@ -40,6 +43,15 @@ function loadGoogleMapsSDK(): Promise<void> {
     document.head.appendChild(s)
   })
   return loadPromise
+}
+
+/** Resolve to null if `p` doesn't settle within `ms` — so one hung Google call
+ *  can never stall a whole batch (the cause of geocoding freezing mid-run). */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    p.catch(() => null),
+    new Promise<null>(resolve => setTimeout(() => resolve(null), ms)),
+  ])
 }
 
 // ── Address → coords cache (survives reloads & re-uploads of the same clients) ──
@@ -77,16 +89,14 @@ export async function geocodeAddress(query: string): Promise<{ lat: number; lon:
   if (!w.google?.maps) return null
   if (!geocoder) geocoder = new w.google.maps.Geocoder()
 
-  try {
-    const res: any = await geocoder.geocode({ address: query, region: 'be' })
-    const loc = res?.results?.[0]?.geometry?.location
-    if (loc) {
-      const lat = loc.lat(), lon = loc.lng()
-      cache[key] = [Number(lat.toFixed(6)), Number(lon.toFixed(6))]
-      saveCache(cache)
-      return { lat, lon }
-    }
-  } catch { /* over-query / invalid key / no result */ }
+  const res: any = await withTimeout(geocoder.geocode({ address: query, region: 'be' }), 8000)
+  const loc = res?.results?.[0]?.geometry?.location
+  if (loc) {
+    const lat = loc.lat(), lon = loc.lng()
+    cache[key] = [Number(lat.toFixed(6)), Number(lon.toFixed(6))]
+    saveCache(cache)
+    return { lat, lon }
+  }
   return null
 }
 
@@ -161,8 +171,8 @@ export async function fetchOpeningHours(
       language: 'en',
     }
     if (near) req.locationBias = { lat: near.lat, lng: near.lon }
-    const { places } = await Place.searchByText(req)
-    const place = places?.[0]
+    const res: any = await withTimeout(Place.searchByText(req), 8000)
+    const place = res?.places?.[0]
     const periods = place?.regularOpeningHours?.periods
     if (!place || !periods?.length) return null
 
