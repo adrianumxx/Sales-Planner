@@ -2,11 +2,15 @@
  * Optional Google Maps integration. When VITE_GOOGLE_MAPS_API_KEY is set in .env,
  * we load the Maps JS SDK and use its client-side Geocoder to resolve full street
  * addresses to precise coordinates — fixing the town-centroid collapse of the
- * offline dataset. Results are cached in localStorage so we geocode each address
- * only once.
+ * offline dataset — and the Places API to extract real opening hours. Results are
+ * cached in localStorage so we call Google for each client only once.
  *
- * No key → nothing loads and the app falls back to the offline coordinates.
+ * No key → nothing loads and the app falls back to the offline coordinates with
+ * no opening-hours data.
  */
+
+import { getDistance } from './geo'
+import type { OpeningHours } from '../types'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnyWindow = Window & { google?: any }
@@ -15,6 +19,9 @@ let loadPromise: Promise<void> | null = null
 
 // Read the API key from build-time environment; never exposed at runtime unless set.
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+
+/** Whether the Maps/Places integration is configured (key present at build time). */
+export const MAPS_ENABLED = !!MAPS_API_KEY
 
 /** Inject the Maps JS SDK once; resolves when `google.maps` is ready. */
 function loadGoogleMapsSDK(): Promise<void> {
@@ -25,7 +32,7 @@ function loadGoogleMapsSDK(): Promise<void> {
   if (loadPromise) return loadPromise
   loadPromise = new Promise<void>((resolve, reject) => {
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&libraries=geocoding&loading=async`
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&libraries=geocoding,places&loading=async`
     s.async = true
     s.defer = true
     s.onload = () => resolve()
@@ -80,5 +87,94 @@ export async function geocodeAddress(query: string): Promise<{ lat: number; lon:
       return { lat, lon }
     }
   } catch { /* over-query / invalid key / no result */ }
+  return null
+}
+
+// ── Opening-hours (Places API) ──────────────────────────────────────────────
+// If the matched venue sits further than this from the client's known location,
+// the match is treated as low-confidence: hours are shown but never used to
+// constrain scheduling (see OpeningHours.verified).
+const HOURS_MATCH_RADIUS_KM = 0.6
+const HOURS_CACHE_KEY = 'salesPlanner.hoursCache'
+
+function loadHoursCache(): Record<string, OpeningHours> {
+  try { return JSON.parse(localStorage.getItem(HOURS_CACHE_KEY) || '{}') } catch { return {} }
+}
+function saveHoursCache(c: Record<string, OpeningHours>): void {
+  try { localStorage.setItem(HOURS_CACHE_KEY, JSON.stringify(c)) } catch { /* quota */ }
+}
+
+let placesLib: any = null
+async function getPlacesLib(): Promise<any> {
+  await loadGoogleMapsSDK()
+  const w = window as AnyWindow
+  if (!w.google?.maps?.importLibrary) return null
+  if (!placesLib) placesLib = await w.google.maps.importLibrary('places')
+  return placesLib
+}
+
+/** Convert Google `regularOpeningHours.periods` into our weekday→intervals map. */
+function periodsToDays(periods: any[]): Record<number, [number, number][]> {
+  const days: Record<number, [number, number][]> = {}
+  for (const p of periods || []) {
+    const od = p?.open?.day
+    if (od == null) continue
+    const openMin = (p.open.hour ?? 0) * 60 + (p.open.minute ?? 0)
+    // No close → open all day. Close on a later day (overnight) → cap at midnight.
+    const sameDay = p?.close && p.close.day === od
+    const closeMin = p?.close
+      ? (sameDay ? (p.close.hour ?? 0) * 60 + (p.close.minute ?? 0) : 1440)
+      : 1440
+    if (closeMin <= openMin) continue
+    ;(days[od] ??= []).push([openMin, closeMin])
+  }
+  return days
+}
+
+/**
+ * Fetch a venue's weekly opening hours via the Places API, matched by name +
+ * address and biased to its known coordinates. Cached. Returns null when the
+ * key is missing, no venue is found, or hours aren't published. The result's
+ * `verified` flag is false when the match looks unreliable (far from `near`).
+ */
+export async function fetchOpeningHours(
+  name: string,
+  address: string | undefined,
+  near?: { lat: number; lon: number }
+): Promise<OpeningHours | null> {
+  if (!MAPS_API_KEY) return null
+  const cacheKey = norm(`${name} ${address ?? ''}`)
+  if (!cacheKey) return null
+  const cache = loadHoursCache()
+  if (cache[cacheKey]) return cache[cacheKey]
+
+  const lib = await getPlacesLib().catch(() => null)
+  const Place = lib?.Place
+  if (!Place) return null
+
+  try {
+    const req: any = {
+      textQuery: `${name}${address ? ', ' + address : ''}`,
+      fields: ['location', 'regularOpeningHours'],
+      maxResultCount: 1,
+      region: 'be',
+      language: 'en',
+    }
+    if (near) req.locationBias = { lat: near.lat, lng: near.lon }
+    const { places } = await Place.searchByText(req)
+    const place = places?.[0]
+    const periods = place?.regularOpeningHours?.periods
+    if (!place || !periods?.length) return null
+
+    let verified = true
+    if (near && place.location) {
+      const d = getDistance(near.lat, near.lon, place.location.lat(), place.location.lng())
+      if (d > HOURS_MATCH_RADIUS_KM) verified = false
+    }
+    const hours: OpeningHours = { days: periodsToDays(periods), verified }
+    cache[cacheKey] = hours
+    saveHoursCache(cache)
+    return hours
+  } catch { /* over-query / no result / API not enabled */ }
   return null
 }

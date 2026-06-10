@@ -302,6 +302,24 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 )}
               </AnimatePresence>
 
+              {/* Opening-hours fetch progress (Google Places) */}
+              <AnimatePresence>
+                {planner.hoursProgress && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm border bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300"
+                  >
+                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                      <div className="w-3.5 h-3.5 border-2 border-emerald-400/40 border-t-emerald-600 rounded-full" />
+                    </motion.div>
+                    <span className="font-semibold">🕒 Checking opening hours…</span>
+                    <span className="opacity-70">{planner.hoursProgress.done}/{planner.hoursProgress.total}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Command result banner */}
               <AnimatePresence>
                 {commandResult && (
