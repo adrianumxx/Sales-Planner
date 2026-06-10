@@ -143,9 +143,9 @@ function openOn(c: HasHours, weekday: number): boolean {
   return !!iv && iv.length > 0
 }
 
-// Field working window the planner schedules within (09:00–17:30).
+// Field working window the planner schedules within (09:00–18:00).
 const WORK_START = 9 * 60
-const WORK_END = 17 * 60 + 30
+const WORK_END = 18 * 60
 
 /** Open intervals on a weekday, clamped to the working window ([] = closed then). */
 function workingIntervals(h: OpeningHours | null, weekday: number): [number, number][] {
@@ -163,44 +163,65 @@ function fmtMin(min: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+// Per-visit scheduling status for a day:
+//  'ok'    — placed inside the venue's open working window
+//  'after' — venue opens only outside working hours (e.g. an evening bar) →
+//            visit it by appointment; the slot shows the real opening time
+//  'closed'— venue has no hours that weekday at all (shouldn't occur post-reflow)
+export type SlotStatus = 'ok' | 'after' | 'closed'
+
 /**
  * Time slots for one day that respect each venue's open window on `weekday`.
- * Walks visits in route order, placing each at the earliest open time ≥ the
- * running cursor. Flags `outside` when a venue is closed during working hours
- * (or the day is too packed to fit it inside its window).
+ * Daytime venues are placed in route order at the earliest open time ≥ a running
+ * cursor. Evening-only venues (open after the working day) are marked 'after' and
+ * given their actual opening time, so the rep books an appointment rather than
+ * seeing a false "closed" warning.
  */
-function buildTimeSlotsForDay(clients: HasHours[], weekday: number): { slots: string[]; outside: boolean[] } {
+function buildTimeSlotsForDay(clients: HasHours[], weekday: number): { slots: string[]; status: SlotStatus[] } {
   const n = clients.length
   const step = Math.min(90, Math.max(30, Math.floor((WORK_END - WORK_START) / Math.max(n, 1))))
   let cursor = WORK_START
   const slots: string[] = []
-  const outside: boolean[] = []
+  const status: SlotStatus[] = []
 
   for (const c of clients) {
-    const ivs = workingIntervals(effectiveHours(c), weekday)
-    if (!ivs.length) {
+    const h = effectiveHours(c)
+    const raw = h ? h.days[weekday] || [] : null // null = unknown hours (unconstrained)
+
+    if (h && (!raw || raw.length === 0)) {
       slots.push(fmtMin(Math.min(cursor, WORK_END - 1)))
-      outside.push(true)
+      status.push('closed')
       cursor += step
       continue
     }
+
+    const work = workingIntervals(h, weekday) // clamped to working window; unknown ⇒ whole window
+    if (!work.length) {
+      // Open that day, but only outside working hours → evening / by appointment.
+      const firstOpen = raw && raw.length ? Math.min(...raw.map(iv => iv[0])) : WORK_END
+      slots.push(fmtMin(Math.min(firstOpen, 1439)))
+      status.push('after')
+      continue // evening visit doesn't consume the daytime cursor
+    }
+
     let t = -1
-    for (const [a, b] of ivs) {
+    for (const [a, b] of work) {
       if (cursor <= a) { t = a; break }
       if (cursor < b) { t = cursor; break }
     }
     if (t === -1) {
-      // ran past this venue's window — over-packed day; place at cursor and flag
-      slots.push(fmtMin(Math.min(cursor, WORK_END - 1)))
-      outside.push(true)
-      cursor += step
+      // over-packed day: place at the last open interval's start (still open)
+      const last = work[work.length - 1]
+      slots.push(fmtMin(last[0]))
+      status.push('ok')
+      cursor = last[0] + step
     } else {
       slots.push(fmtMin(t))
-      outside.push(false)
+      status.push('ok')
       cursor = t + step
     }
   }
-  return { slots, outside }
+  return { slots, status }
 }
 
 /**
@@ -325,9 +346,9 @@ function buildPlan(
     // the legacy 09–12 / 14–17 distribution (keeps existing plans byte-identical).
     const weekday = weekdayOf(dateStr)
     const hasHours = ordered.some(c => effectiveHours(c))
-    const { slots, outside } = hasHours
+    const { slots, status } = hasHours
       ? buildTimeSlotsForDay(ordered, weekday)
-      : { slots: buildTimeSlots(ordered.length), outside: ordered.map(() => false) }
+      : { slots: buildTimeSlots(ordered.length), status: ordered.map(() => 'ok' as SlotStatus) }
 
     const visits: VisitDay[] = ordered.map((client, idx) => ({
       id:            `${dateStr}-${idx}`,
@@ -344,7 +365,8 @@ function buildPlan(
       quality:       client.quality ?? 7,
       lastVisitDays: client.lastVisitDays,
       openingHours:  client.openingHours,
-      outsideHours:  outside[idx] ?? false,
+      outsideHours:  status[idx] === 'closed',
+      byAppointment: status[idx] === 'after',
     }))
 
     if (visits.length > 0) {
@@ -375,15 +397,16 @@ export function recomputeDay(
   // Open-aware slots when we know the weekday and a venue has verified hours;
   // otherwise the legacy distribution (unchanged behaviour for existing callers).
   const hasHours = weekday != null && ordered.some(v => effectiveHours(v))
-  const { slots, outside } = hasHours
+  const { slots, status } = hasHours
     ? buildTimeSlotsForDay(ordered, weekday!)
-    : { slots: buildTimeSlots(ordered.length), outside: [] as boolean[] }
+    : { slots: buildTimeSlots(ordered.length), status: [] as SlotStatus[] }
 
   const out = ordered.map((v, i) => ({
     ...v,
     timeSlot: slots[i] ?? slots[i % Math.max(slots.length, 1)] ?? '09:00',
     distance: legs[i] ?? 0,
-    outsideHours: hasHours ? (outside[i] ?? false) : v.outsideHours,
+    outsideHours: hasHours ? status[i] === 'closed' : v.outsideHours,
+    byAppointment: hasHours ? status[i] === 'after' : v.byAppointment,
   }))
   return { visits: out, totalKm }
 }
