@@ -617,7 +617,9 @@ function VisitRow({
             <div className={`flex items-center gap-1 px-3 py-1 rounded-lg ${
               visit.outsideHours
                 ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                : 'bg-purple-50 dark:bg-purple-900/20'
+                : visit.byAppointment
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                  : 'bg-purple-50 dark:bg-purple-900/20'
             }`}>
               <Clock className="h-4 w-4" />
               {visit.timeSlot}
@@ -648,10 +650,17 @@ function VisitRow({
               )
             })()}
 
-            {visit.outsideHours && (
-              <div className="flex items-center gap-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 px-3 py-1 rounded-lg font-semibold" title="This visit falls outside the venue's opening hours">
+            {visit.byAppointment && (
+              <div className="flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-3 py-1 rounded-lg font-semibold" title="Open only in the evening — visit by appointment">
                 <Clock className="h-4 w-4" />
-                Outside hours
+                By appointment
+              </div>
+            )}
+
+            {visit.outsideHours && (
+              <div className="flex items-center gap-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 px-3 py-1 rounded-lg font-semibold" title="The venue appears closed on this day">
+                <Clock className="h-4 w-4" />
+                Closed this day
               </div>
             )}
 

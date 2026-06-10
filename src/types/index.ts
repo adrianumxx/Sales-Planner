@@ -47,8 +47,11 @@ export interface VisitDay {
   quality: number;
   lastVisitDays?: number;
   openingHours?: OpeningHours;
-  /** True when this visit's time/day falls outside the venue's verified hours. */
+  /** True when this visit's day has no verified open hours at all (rare). */
   outsideHours?: boolean;
+  /** True when the venue opens only outside working hours (e.g. an evening bar)
+   *  → visit by appointment; timeSlot shows the venue's real opening time. */
+  byAppointment?: boolean;
 }
 
 export interface DailyPlan {
