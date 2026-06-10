@@ -13,6 +13,21 @@ import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 const fmtHM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
 
 /**
+ * Day header label with a relative prefix: "Today" / "Tomorrow" for the next two
+ * days, then the plain weekday + date. The date stays visible for clarity.
+ */
+function relativeDayLabel(dateStr: string): string {
+  const today = toDateStr(new Date())
+  const tmr = new Date()
+  tmr.setDate(tmr.getDate() + 1)
+  const tomorrow = toDateStr(tmr)
+  const date = formatDateLabel(dateStr, { weekday: 'short', month: 'short', day: 'numeric' })
+  if (dateStr === today) return `Today · ${date}`
+  if (dateStr === tomorrow) return `Tomorrow · ${date}`
+  return formatDateLabel(dateStr)
+}
+
+/**
  * Short opening-hours label for a venue on a given date, e.g. "09:00–18:00"
  * or "Closed". Returns null when hours are unknown (nothing to show).
  */
@@ -298,7 +313,7 @@ export function PlanViewer({
                     {/* Day header */}
                     <div className="flex justify-between items-center gap-2 px-3 sm:px-4 py-2 border-l-4 border-indigo-500 dark:border-cyan-400 bg-slate-50/60 dark:bg-slate-800/40">
                       <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-50 truncate">
-                        {formatDateLabel(day.date)}
+                        {relativeDayLabel(day.date)}
                       </h3>
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
                         <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
