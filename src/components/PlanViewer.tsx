@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   CheckCircle2, Circle, MapPin, Clock, Edit2, ExternalLink, History,
-  ChevronDown, GripVertical, Pencil, Archive, Route, Navigation, Wand2, Zap,
+  ChevronDown, GripVertical, Pencil, Archive, Route, Navigation, Wand2, Zap, Flag,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay, OpeningHours } from '../types'
@@ -593,6 +593,18 @@ function VisitRow({
 
           {/* Info row */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2 text-sm text-slate-600 dark:text-slate-400">
+            {visit.businessStatus === 'CLOSED_PERMANENTLY' && (
+              <div className="flex items-center gap-1 bg-red-600 text-white px-3 py-1 rounded-lg font-bold" title="Google reports this venue as permanently closed">
+                <Flag className="h-4 w-4" />
+                Permanently closed
+              </div>
+            )}
+            {visit.businessStatus === 'CLOSED_TEMPORARILY' && (
+              <div className="flex items-center gap-1 bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200 px-3 py-1 rounded-lg font-semibold" title="Google reports this venue as temporarily closed">
+                <Flag className="h-4 w-4" />
+                Temporarily closed
+              </div>
+            )}
             <a
               href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
                 visit.address ? `${visit.clientName}, ${visit.address}` : `${visit.clientName}, ${visit.town}, Belgium`

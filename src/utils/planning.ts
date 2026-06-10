@@ -365,6 +365,7 @@ function buildPlan(
       quality:       client.quality ?? 7,
       lastVisitDays: client.lastVisitDays,
       openingHours:  client.openingHours,
+      businessStatus: client.businessStatus,
       outsideHours:  status[idx] === 'closed',
       byAppointment: status[idx] === 'after',
     }))
