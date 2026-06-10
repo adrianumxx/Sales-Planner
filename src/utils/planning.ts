@@ -1,6 +1,6 @@
-import type { Client, DailyPlan, VisitDay } from '../types'
+import type { Client, DailyPlan, VisitDay, OpeningHours } from '../types'
 import { getCityCoordinates, getDistance } from './geo'
-import { nextWorkdays } from './date'
+import { nextWorkdays, weekdayOf } from './date'
 
 // Urgency thresholds (days since last visit)
 const URGENT_DAYS    = 90  // 3+ months → top priority
@@ -124,6 +124,170 @@ function prioritize(clients: Client[]): Client[] {
   })
 }
 
+// ─── Opening-hours awareness ────────────────────────────────────────────────
+// Only VERIFIED hours constrain scheduling. Unknown / low-confidence hours are
+// treated as "available any day/time" so we never move a visit on bad data.
+
+type HasHours = { openingHours?: OpeningHours }
+
+/** The venue's hours iff trustworthy enough to schedule against, else null. */
+function effectiveHours(c: HasHours): OpeningHours | null {
+  return c.openingHours && c.openingHours.verified ? c.openingHours : null
+}
+
+/** Is this venue open on the given weekday (0=Sun..6=Sat)? Unknown ⇒ yes. */
+function openOn(c: HasHours, weekday: number): boolean {
+  const h = effectiveHours(c)
+  if (!h) return true
+  const iv = h.days[weekday]
+  return !!iv && iv.length > 0
+}
+
+// Field working window the planner schedules within (09:00–17:30).
+const WORK_START = 9 * 60
+const WORK_END = 17 * 60 + 30
+
+/** Open intervals on a weekday, clamped to the working window ([] = closed then). */
+function workingIntervals(h: OpeningHours | null, weekday: number): [number, number][] {
+  if (!h) return [[WORK_START, WORK_END]]
+  const out: [number, number][] = []
+  for (const [a, b] of h.days[weekday] || []) {
+    const s = Math.max(a, WORK_START), e = Math.min(b, WORK_END)
+    if (e > s) out.push([s, e])
+  }
+  return out
+}
+
+function fmtMin(min: number): string {
+  const h = Math.floor(min / 60), m = min % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+/**
+ * Time slots for one day that respect each venue's open window on `weekday`.
+ * Walks visits in route order, placing each at the earliest open time ≥ the
+ * running cursor. Flags `outside` when a venue is closed during working hours
+ * (or the day is too packed to fit it inside its window).
+ */
+function buildTimeSlotsForDay(clients: HasHours[], weekday: number): { slots: string[]; outside: boolean[] } {
+  const n = clients.length
+  const step = Math.min(90, Math.max(30, Math.floor((WORK_END - WORK_START) / Math.max(n, 1))))
+  let cursor = WORK_START
+  const slots: string[] = []
+  const outside: boolean[] = []
+
+  for (const c of clients) {
+    const ivs = workingIntervals(effectiveHours(c), weekday)
+    if (!ivs.length) {
+      slots.push(fmtMin(Math.min(cursor, WORK_END - 1)))
+      outside.push(true)
+      cursor += step
+      continue
+    }
+    let t = -1
+    for (const [a, b] of ivs) {
+      if (cursor <= a) { t = a; break }
+      if (cursor < b) { t = cursor; break }
+    }
+    if (t === -1) {
+      // ran past this venue's window — over-packed day; place at cursor and flag
+      slots.push(fmtMin(Math.min(cursor, WORK_END - 1)))
+      outside.push(true)
+      cursor += step
+    } else {
+      slots.push(fmtMin(t))
+      outside.push(false)
+      cursor = t + step
+    }
+  }
+  return { slots, outside }
+}
+
+/**
+ * Reflow day-buckets so no visit lands on a weekday the venue is (verifiably)
+ * closed. Buckets keep their geography; only closed-on-their-day clients are
+ * pulled out and re-placed — first back-filled into the earliest existing day
+ * they're open on (with spare capacity), otherwise grouped onto new trailing
+ * days by compatible weekday. When NO client has verified hours this is a no-op
+ * and the output is identical to the legacy bucketing.
+ */
+function reflowForHours(
+  rawBuckets: Client[][],
+  from: Date,
+  blocked: Set<string> | undefined,
+  perDay: number
+): { date: string; clients: Client[] }[] {
+  const anyHours = rawBuckets.some(b => b.some(c => effectiveHours(c)))
+  if (!anyHours) {
+    const dates = nextWorkdays(rawBuckets.length, from, blocked)
+    return rawBuckets.map((clients, i) => ({ date: dates[i], clients }))
+  }
+
+  const total = rawBuckets.reduce((s, b) => s + b.length, 0)
+  const dates = nextWorkdays(Math.max(total, rawBuckets.length), from, blocked)
+
+  // Phase 1 — keep clients open on their day; collect the closed-on-day ones.
+  type Day = { date: string; clients: Client[] }
+  const placed: Day[] = rawBuckets.map((b, i) => ({
+    date: dates[i],
+    clients: b.filter(c => openOn(c, weekdayOf(dates[i]))),
+  }))
+  const displaced: Client[] = []
+  rawBuckets.forEach((b, i) => {
+    const w = weekdayOf(dates[i])
+    for (const c of b) if (!openOn(c, w)) displaced.push(c)
+  })
+
+  // Phase 2a — back-fill into the nearest existing day with capacity & open weekday.
+  const leftover: Client[] = []
+  for (const c of displaced) {
+    let bestIdx = -1, bestD = Infinity
+    for (let i = 0; i < placed.length; i++) {
+      if (placed[i].clients.length >= perDay) continue
+      if (!openOn(c, weekdayOf(placed[i].date))) continue
+      const ref = placed[i].clients.length ? coordOf(placed[i].clients[0]) : null
+      const p = coordOf(c)
+      const d = ref && p ? getDistance(ref.lat, ref.lon, p.lat, p.lon) : 0
+      if (d < bestD) { bestD = d; bestIdx = i }
+    }
+    if (bestIdx >= 0) placed[bestIdx].clients.push(c)
+    else leftover.push(c)
+  }
+
+  // Phase 2b — remaining onto new trailing days grouped by compatible weekday.
+  let di = rawBuckets.length
+  let guard = 0
+  while (leftover.length && di < dates.length && guard++ < dates.length + 5) {
+    const w = weekdayOf(dates[di])
+    const seedIdx = leftover.findIndex(c => openOn(c, w))
+    if (seedIdx === -1) { di++; continue }
+    const day: Client[] = [leftover.splice(seedIdx, 1)[0]]
+    const ref = coordOf(day[0])
+    while (day.length < perDay && leftover.length) {
+      let idx = -1, best = Infinity
+      leftover.forEach((c, i) => {
+        if (!openOn(c, w)) return
+        const p = coordOf(c)
+        const d = ref && p ? getDistance(ref.lat, ref.lon, p.lat, p.lon) : 0
+        if (d < best) { best = d; idx = i }
+      })
+      if (idx === -1) break
+      day.push(leftover.splice(idx, 1)[0])
+    }
+    placed.push({ date: dates[di], clients: day })
+    di++
+  }
+
+  // Anyone still unplaced opens on no working weekday — schedule (flagged later),
+  // never dropped.
+  if (leftover.length) {
+    if (di < dates.length) placed.push({ date: dates[di], clients: leftover })
+    else if (placed.length) placed[placed.length - 1].clients.push(...leftover)
+  }
+
+  return placed.filter(d => d.clients.length > 0)
+}
+
 /** Core pipeline shared by full-plan and area-coverage generation. */
 function buildPlan(
   clients: Client[],
@@ -148,15 +312,22 @@ function buildPlan(
   //    capped by visits/day and — optionally — a max driving distance per day)
   const clientsByDay = groupByDay(sorted, visitsPerDay, homeCoords, maxKmPerDay, endCoords)
 
-  // 4. Lay each day-bucket onto the next available workdays (Mon–Fri, skipping admin days)
-  const dates = nextWorkdays(clientsByDay.length, new Date(), blocked)
+  // 4. Lay buckets onto workdays (Mon–Fri, skipping admin), reflowing any visit
+  //    off a weekday its venue is closed (no-op when no verified hours exist).
+  const days = reflowForHours(clientsByDay, new Date(), blocked, visitsPerDay)
   const plan: DailyPlan[] = []
 
-  clientsByDay.forEach((bucket, dayIndex) => {
-    const dateStr = dates[dayIndex]
+  days.forEach(({ date: dateStr, clients: bucket }) => {
     const ordered = optimizeRoute(bucket, homeCoords, endCoords)
-    const slots = buildTimeSlots(ordered.length)
     const { legs, totalKm } = routeFromHome(ordered, homeCoords, endCoords)
+
+    // Open-aware time slots only when the day has verified-hours venues; otherwise
+    // the legacy 09–12 / 14–17 distribution (keeps existing plans byte-identical).
+    const weekday = weekdayOf(dateStr)
+    const hasHours = ordered.some(c => effectiveHours(c))
+    const { slots, outside } = hasHours
+      ? buildTimeSlotsForDay(ordered, weekday)
+      : { slots: buildTimeSlots(ordered.length), outside: ordered.map(() => false) }
 
     const visits: VisitDay[] = ordered.map((client, idx) => ({
       id:            `${dateStr}-${idx}`,
@@ -167,11 +338,13 @@ function buildPlan(
       lon:           client.lon,
       distance:      legs[idx] ?? 0,
       urgency:       client.urgency ?? 'ok',
-      timeSlot:      slots[idx % slots.length],
+      timeSlot:      slots[idx] ?? slots[idx % Math.max(slots.length, 1)] ?? '09:00',
       completed:     false,
       notes:         '',
       quality:       client.quality ?? 7,
       lastVisitDays: client.lastVisitDays,
+      openingHours:  client.openingHours,
+      outsideHours:  outside[idx] ?? false,
     }))
 
     if (visits.length > 0) {
@@ -193,15 +366,24 @@ export function recomputeDay(
   visits: VisitDay[],
   homeCoords: Pt,
   reoptimize = false,
-  endCoords: Pt = homeCoords
+  endCoords: Pt = homeCoords,
+  weekday?: number
 ): { visits: VisitDay[]; totalKm: number } {
   const ordered = reoptimize ? optimizeRoute(visits, homeCoords, endCoords) : visits
-  const slots = buildTimeSlots(ordered.length)
   const { legs, totalKm } = routeFromHome(ordered, homeCoords, endCoords)
+
+  // Open-aware slots when we know the weekday and a venue has verified hours;
+  // otherwise the legacy distribution (unchanged behaviour for existing callers).
+  const hasHours = weekday != null && ordered.some(v => effectiveHours(v))
+  const { slots, outside } = hasHours
+    ? buildTimeSlotsForDay(ordered, weekday!)
+    : { slots: buildTimeSlots(ordered.length), outside: [] as boolean[] }
+
   const out = ordered.map((v, i) => ({
     ...v,
-    timeSlot: slots[i % slots.length],
+    timeSlot: slots[i] ?? slots[i % Math.max(slots.length, 1)] ?? '09:00',
     distance: legs[i] ?? 0,
+    outsideHours: hasHours ? (outside[i] ?? false) : v.outsideHours,
   }))
   return { visits: out, totalKm }
 }

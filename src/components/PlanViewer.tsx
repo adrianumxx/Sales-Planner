@@ -4,11 +4,24 @@ import {
   ChevronDown, GripVertical, Pencil, Archive, Route, Navigation, Wand2, Zap,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { DailyPlan, VisitDay } from '../types'
+import type { DailyPlan, VisitDay, OpeningHours } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
 import { nearestCharger, resolveCoords } from '../utils/geo'
-import { formatDateLabel, parseLocalDate, toDateStr } from '../utils/date'
+import { formatDateLabel, parseLocalDate, toDateStr, weekdayOf } from '../utils/date'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
+
+const fmtHM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+
+/**
+ * Short opening-hours label for a venue on a given date, e.g. "09:00–18:00"
+ * or "Closed". Returns null when hours are unknown (nothing to show).
+ */
+function hoursLabel(hours: OpeningHours | undefined, dateStr: string): string | null {
+  if (!hours) return null
+  const iv = hours.days[weekdayOf(dateStr)]
+  if (!iv || iv.length === 0) return 'Closed'
+  return iv.map(([a, b]) => `${fmtHM(a)}–${fmtHM(b)}`).join(', ')
+}
 
 // Charge before hitting empty: trigger a charging stop at 85% of range.
 const RANGE_SAFETY = 0.85
@@ -338,6 +351,7 @@ export function PlanViewer({
                           <React.Fragment key={visit.id}>
                             <VisitRow
                               visit={visit}
+                              dayDate={day.date}
                               completed={completedVisits.has(visit.id)}
                               noteText={notes[visit.id] || ''}
                               hasVoiceNote={!!voiceNotes[visit.id]}
@@ -451,6 +465,7 @@ export function PlanViewer({
 
 function VisitRow({
   visit,
+  dayDate,
   completed,
   noteText,
   hasVoiceNote,
@@ -467,6 +482,7 @@ function VisitRow({
   onDropOn,
 }: {
   visit: VisitDay
+  dayDate: string
   completed: boolean
   noteText: string
   hasVoiceNote: boolean
@@ -583,10 +599,46 @@ function VisitRow({
               </div>
             )}
 
-            <div className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 px-3 py-1 rounded-lg">
+            <div className={`flex items-center gap-1 px-3 py-1 rounded-lg ${
+              visit.outsideHours
+                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                : 'bg-purple-50 dark:bg-purple-900/20'
+            }`}>
               <Clock className="h-4 w-4" />
               {visit.timeSlot}
             </div>
+
+            {/* Opening hours for this weekday (when known via Google Places) */}
+            {(() => {
+              const label = hoursLabel(visit.openingHours, dayDate)
+              if (!label) return null
+              const closed = label === 'Closed'
+              return (
+                <div
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg ${
+                    closed
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                      : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                  } ${visit.openingHours && !visit.openingHours.verified ? 'opacity-70' : ''}`}
+                  title={
+                    visit.openingHours && !visit.openingHours.verified
+                      ? 'Opening hours (unverified match — please double-check)'
+                      : 'Opening hours from Google'
+                  }
+                >
+                  <Clock className="h-4 w-4" />
+                  {closed ? 'Closed today' : label}
+                  {visit.openingHours && !visit.openingHours.verified && <span className="text-[10px]">?</span>}
+                </div>
+              )
+            })()}
+
+            {visit.outsideHours && (
+              <div className="flex items-center gap-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 px-3 py-1 rounded-lg font-semibold" title="This visit falls outside the venue's opening hours">
+                <Clock className="h-4 w-4" />
+                Outside hours
+              </div>
+            )}
 
             {visit.lastVisitDays != null && visit.lastVisitDays > 0 && (
               <div className="flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 px-3 py-1 rounded-lg" title="Days since last visit">

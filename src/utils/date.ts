@@ -26,6 +26,11 @@ export function todayStr(): string {
   return toDateStr(new Date())
 }
 
+/** Weekday of a `YYYY-MM-DD` string: 0 = Sunday … 6 = Saturday (local). */
+export function weekdayOf(str: string): number {
+  return parseLocalDate(str).getDay()
+}
+
 /**
  * Field-rep work week: Monday–Friday. Single source of truth — both the
  * planner (date layout) and the calendar (active cells) must agree on this.

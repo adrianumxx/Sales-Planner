@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
-import { geocodeAddress } from '../utils/googleMaps'
+import { weekdayOf } from '../utils/date'
+import { geocodeAddress, fetchOpeningHours, MAPS_ENABLED } from '../utils/googleMaps'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
@@ -50,8 +51,9 @@ export function useSalesPlanner(userId?: string) {
   const [evRangeKm, setEvRangeKm] = useLocalStorage('salesPlanner.evRangeKm', 300)
   const [carModel, setCarModel] = useLocalStorage('salesPlanner.carModel', '')
 
-  // Geocoding progress (API key is configured at build-time via VITE_GOOGLE_MAPS_API_KEY)
+  // Geocoding + opening-hours progress (API key configured via VITE_GOOGLE_MAPS_API_KEY)
   const [geoProgress, setGeoProgress] = useState<{ done: number; total: number } | null>(null)
+  const [hoursProgress, setHoursProgress] = useState<{ done: number; total: number } | null>(null)
 
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
@@ -149,7 +151,7 @@ export function useSalesPlanner(userId?: string) {
           let next = rollForwardDates(prev, new Date(), adminDays)
           if (homeCoords) {
             next = next.map(day => {
-              const r = recomputeDay(day.visits, homeCoords, false, end || homeCoords)
+              const r = recomputeDay(day.visits, homeCoords, false, end || homeCoords, weekdayOf(day.date))
               return { ...day, visits: r.visits, totalKm: r.totalKm }
             })
           }
@@ -209,6 +211,46 @@ export function useSalesPlanner(userId?: string) {
         setPlan(generatePlan(updated, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
       }
       setGeoProgress(null)
+    })()
+    return () => { cancelled = true }
+  }, [data])
+
+  // Opening-hours pass (Places API). Runs after geocoding finishes so venues are
+  // matched near their precise location. Each client is attempted once
+  // (hoursAttempted), cached, then the plan is regenerated so the engine can
+  // avoid closed days and slot visits inside opening hours.
+  useEffect(() => {
+    if (!MAPS_ENABLED) return
+    // Wait until geocoding is done — better location bias, fewer mismatches.
+    if (data.some(c => !c.geocoded && (c.address || c.town))) return
+    const pending = data.filter(c => !c.hoursAttempted && c.clientName)
+    if (pending.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      setHoursProgress({ done: 0, total: pending.length })
+
+      const byId = new Map(data.map(c => [c.id, c]))
+      let done = 0
+      for (const c of pending) {
+        if (cancelled) return
+        const near = c.lat != null && c.lon != null ? { lat: c.lat, lon: c.lon } : undefined
+        const hours = await fetchOpeningHours(c.clientName, c.address, near)
+        const cur = byId.get(c.id)!
+        byId.set(c.id, { ...cur, hoursAttempted: true, openingHours: hours ?? undefined })
+        done++
+        if (done % 5 === 0) setHoursProgress({ done, total: pending.length })
+      }
+      if (cancelled) return
+
+      const updated = data.map(c => byId.get(c.id)!)
+      setData(updated)
+      const homeCoords = getCityCoordinates(homeAddress)
+      if (homeCoords) {
+        const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+        setPlan(generatePlan(updated, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
+      }
+      setHoursProgress(null)
     })()
     return () => { cancelled = true }
   }, [data])
@@ -304,7 +346,7 @@ export function useSalesPlanner(userId?: string) {
       const end = (returnAddress && getCityCoordinates(returnAddress)) || home || undefined
       const apply = (day: DailyPlan, visits: VisitDay[], reoptimize: boolean): DailyPlan => {
         if (!home) return { ...day, visits }
-        const r = recomputeDay(visits, home, reoptimize, end || home)
+        const r = recomputeDay(visits, home, reoptimize, end || home, weekdayOf(day.date))
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       }
 
@@ -329,7 +371,7 @@ export function useSalesPlanner(userId?: string) {
         if (day.date !== date) return day
         const visits = day.visits.filter(v => v.id !== visitId)
         if (!home) return { ...day, visits }
-        const r = recomputeDay(visits, home, false, end || home)
+        const r = recomputeDay(visits, home, false, end || home, weekdayOf(date))
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
@@ -351,7 +393,7 @@ export function useSalesPlanner(userId?: string) {
         visits.splice(to, 0, moved)
         // Keep the user's chosen order, just re-sequence times/distances.
         if (!home) return { ...day, visits }
-        const r = recomputeDay(visits, home, false, end || home)
+        const r = recomputeDay(visits, home, false, end || home, weekdayOf(date))
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
@@ -366,7 +408,7 @@ export function useSalesPlanner(userId?: string) {
     setPlan(prev =>
       prev.map(day => {
         if (day.date !== date) return day
-        const r = recomputeDay(day.visits, home, true, end)
+        const r = recomputeDay(day.visits, home, true, end, weekdayOf(date))
         return { ...day, visits: r.visits, totalKm: r.totalKm }
       })
     )
@@ -531,6 +573,7 @@ export function useSalesPlanner(userId?: string) {
     carModel,
     setCarModel,
     geoProgress,
+    hoursProgress,
     adminDays,
     toggleAdminDay,
     loadClients,
