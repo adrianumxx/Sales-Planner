@@ -454,7 +454,6 @@ function AppContent({ user, onLogout }: AppContentProps) {
           vehicleType={planner.vehicleType}
           evRangeKm={planner.evRangeKm}
           carModel={planner.carModel}
-          mapsApiKey={planner.mapsApiKey}
           darkMode={planner.darkMode}
           onHomeAddressChange={planner.setHomeAddress}
           onReturnAddressChange={planner.setReturnAddress}
@@ -463,7 +462,6 @@ function AppContent({ user, onLogout }: AppContentProps) {
           onVehicleTypeChange={planner.setVehicleType}
           onEvRangeChange={planner.setEvRangeKm}
           onCarModelChange={planner.setCarModel}
-          onMapsApiKeyChange={planner.setMapsApiKey}
           onDarkModeChange={planner.setDarkMode}
           onClearAll={planner.clearAll}
           onClose={() => planner.setShowSettings(false)}

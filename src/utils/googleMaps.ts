@@ -1,9 +1,9 @@
 /**
- * Optional Google Maps integration. When the user provides their own API key
- * (entered in Settings, stored locally), we load the Maps JS SDK and use its
- * client-side Geocoder to resolve full street addresses to precise coordinates
- * — fixing the town-centroid collapse of the offline dataset. Results are cached
- * in localStorage so we geocode each address only once.
+ * Optional Google Maps integration. When VITE_GOOGLE_MAPS_API_KEY is set in .env,
+ * we load the Maps JS SDK and use its client-side Geocoder to resolve full street
+ * addresses to precise coordinates — fixing the town-centroid collapse of the
+ * offline dataset. Results are cached in localStorage so we geocode each address
+ * only once.
  *
  * No key → nothing loads and the app falls back to the offline coordinates.
  */
@@ -13,15 +13,19 @@ type AnyWindow = Window & { google?: any }
 
 let loadPromise: Promise<void> | null = null
 
+// Read the API key from build-time environment; never exposed at runtime unless set.
+const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+
 /** Inject the Maps JS SDK once; resolves when `google.maps` is ready. */
-export function loadGoogleMaps(key: string): Promise<void> {
+function loadGoogleMapsSDK(): Promise<void> {
+  if (!MAPS_API_KEY) return Promise.reject(new Error('Google Maps API key not configured'))
   if (typeof window === 'undefined') return Promise.reject(new Error('no window'))
   const w = window as AnyWindow
   if (w.google?.maps) return Promise.resolve()
   if (loadPromise) return loadPromise
   loadPromise = new Promise<void>((resolve, reject) => {
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=geocoding&loading=async`
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&libraries=geocoding&loading=async`
     s.async = true
     s.defer = true
     s.onload = () => resolve()
@@ -44,12 +48,23 @@ const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ')
 
 let geocoder: any = null
 
-/** Geocode one address to {lat, lon}; cached. Returns null if unresolved. */
+/**
+ * Geocode one address to {lat, lon}; cached. Returns null if unresolved or if
+ * the API key is not configured. Safe to call: if MAPS_API_KEY is not set,
+ * returns null gracefully.
+ */
 export async function geocodeAddress(query: string): Promise<{ lat: number; lon: number } | null> {
+  if (!MAPS_API_KEY) return null // No key configured, fall back to offline
   const key = norm(query)
   if (!key) return null
   const cache = loadCache()
   if (cache[key]) return { lat: cache[key][0], lon: cache[key][1] }
+
+  try {
+    await loadGoogleMapsSDK()
+  } catch {
+    return null // SDK load failed, fall back to offline
+  }
 
   const w = window as AnyWindow
   if (!w.google?.maps) return null
