@@ -10,7 +10,7 @@
  */
 
 import { getDistance } from './geo'
-import type { OpeningHours } from '../types'
+import type { OpeningHours, BusinessStatus } from '../types'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnyWindow = Window & { google?: any }
@@ -100,18 +100,24 @@ export async function geocodeAddress(query: string): Promise<{ lat: number; lon:
   return null
 }
 
-// ── Opening-hours (Places API) ──────────────────────────────────────────────
+// ── Place info: opening hours + operating status (Places API) ────────────────
 // If the matched venue sits further than this from the client's known location,
 // the match is treated as low-confidence: hours are shown but never used to
 // constrain scheduling (see OpeningHours.verified).
 const HOURS_MATCH_RADIUS_KM = 0.6
-const HOURS_CACHE_KEY = 'salesPlanner.hoursCache'
+// v2: cache now also holds businessStatus, so use a fresh key.
+const PLACE_CACHE_KEY = 'salesPlanner.placeCache.v2'
 
-function loadHoursCache(): Record<string, OpeningHours> {
-  try { return JSON.parse(localStorage.getItem(HOURS_CACHE_KEY) || '{}') } catch { return {} }
+export interface PlaceInfo {
+  openingHours: OpeningHours | null
+  businessStatus: BusinessStatus | null
 }
-function saveHoursCache(c: Record<string, OpeningHours>): void {
-  try { localStorage.setItem(HOURS_CACHE_KEY, JSON.stringify(c)) } catch { /* quota */ }
+
+function loadPlaceCache(): Record<string, PlaceInfo> {
+  try { return JSON.parse(localStorage.getItem(PLACE_CACHE_KEY) || '{}') } catch { return {} }
+}
+function savePlaceCache(c: Record<string, PlaceInfo>): void {
+  try { localStorage.setItem(PLACE_CACHE_KEY, JSON.stringify(c)) } catch { /* quota */ }
 }
 
 let placesLib: any = null
@@ -141,21 +147,24 @@ function periodsToDays(periods: any[]): Record<number, [number, number][]> {
   return days
 }
 
+const VALID_STATUS: BusinessStatus[] = ['OPERATIONAL', 'CLOSED_TEMPORARILY', 'CLOSED_PERMANENTLY']
+
 /**
- * Fetch a venue's weekly opening hours via the Places API, matched by name +
- * address and biased to its known coordinates. Cached. Returns null when the
- * key is missing, no venue is found, or hours aren't published. The result's
- * `verified` flag is false when the match looks unreliable (far from `near`).
+ * Fetch a venue's opening hours AND operating status via the Places API, matched
+ * by name + address and biased to its known coordinates. Cached. Returns null
+ * when the key is missing or no venue is found. `openingHours.verified` is false
+ * when the match looks unreliable (far from `near`); a permanently/temporarily
+ * closed venue is reported via `businessStatus` even when it has no hours.
  */
-export async function fetchOpeningHours(
+export async function fetchPlaceInfo(
   name: string,
   address: string | undefined,
   near?: { lat: number; lon: number }
-): Promise<OpeningHours | null> {
+): Promise<PlaceInfo | null> {
   if (!MAPS_API_KEY) return null
   const cacheKey = norm(`${name} ${address ?? ''}`)
   if (!cacheKey) return null
-  const cache = loadHoursCache()
+  const cache = loadPlaceCache()
   if (cache[cacheKey]) return cache[cacheKey]
 
   const lib = await getPlacesLib().catch(() => null)
@@ -165,7 +174,7 @@ export async function fetchOpeningHours(
   try {
     const req: any = {
       textQuery: `${name}${address ? ', ' + address : ''}`,
-      fields: ['location', 'regularOpeningHours'],
+      fields: ['location', 'regularOpeningHours', 'businessStatus'],
       maxResultCount: 1,
       region: 'be',
       language: 'en',
@@ -173,18 +182,23 @@ export async function fetchOpeningHours(
     if (near) req.locationBias = { lat: near.lat, lng: near.lon }
     const res: any = await withTimeout(Place.searchByText(req), 8000)
     const place = res?.places?.[0]
-    const periods = place?.regularOpeningHours?.periods
-    if (!place || !periods?.length) return null
+    if (!place) return null
 
     let verified = true
     if (near && place.location) {
       const d = getDistance(near.lat, near.lon, place.location.lat(), place.location.lng())
       if (d > HOURS_MATCH_RADIUS_KM) verified = false
     }
-    const hours: OpeningHours = { days: periodsToDays(periods), verified }
-    cache[cacheKey] = hours
-    saveHoursCache(cache)
-    return hours
+    const periods = place.regularOpeningHours?.periods
+    const status = VALID_STATUS.includes(place.businessStatus) ? (place.businessStatus as BusinessStatus) : null
+    const info: PlaceInfo = {
+      openingHours: periods?.length ? { days: periodsToDays(periods), verified } : null,
+      // Only trust a "closed" verdict when the match is reliable.
+      businessStatus: status && (verified || status === 'OPERATIONAL') ? status : null,
+    }
+    cache[cacheKey] = info
+    savePlaceCache(cache)
+    return info
   } catch { /* over-query / no result / API not enabled */ }
   return null
 }

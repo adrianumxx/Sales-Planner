@@ -12,6 +12,9 @@ export interface OpeningHours {
   verified: boolean;
 }
 
+/** Google Places operating status for a venue. */
+export type BusinessStatus = 'OPERATIONAL' | 'CLOSED_TEMPORARILY' | 'CLOSED_PERMANENTLY';
+
 export interface Client {
   id: string;
   clientName: string;
@@ -29,6 +32,8 @@ export interface Client {
   /** True once we've attempted to fetch opening hours via Google Places. */
   hoursAttempted?: boolean;
   openingHours?: OpeningHours;
+  /** Operating status from Google Places (e.g. permanently closed). */
+  businessStatus?: BusinessStatus;
   daysSinceLastVisit?: number;
 }
 
@@ -47,6 +52,7 @@ export interface VisitDay {
   quality: number;
   lastVisitDays?: number;
   openingHours?: OpeningHours;
+  businessStatus?: BusinessStatus;
   /** True when this visit's day has no verified open hours at all (rare). */
   outsideHours?: boolean;
   /** True when the venue opens only outside working hours (e.g. an evening bar)

@@ -3,7 +3,7 @@ import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates } from '../utils/geo'
 import { weekdayOf } from '../utils/date'
-import { geocodeAddress, fetchOpeningHours, MAPS_ENABLED } from '../utils/googleMaps'
+import { geocodeAddress, fetchPlaceInfo, MAPS_ENABLED } from '../utils/googleMaps'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
@@ -235,9 +235,14 @@ export function useSalesPlanner(userId?: string) {
       for (const c of pending) {
         if (cancelled) return
         const near = c.lat != null && c.lon != null ? { lat: c.lat, lon: c.lon } : undefined
-        const hours = await fetchOpeningHours(c.clientName, c.address, near)
+        const info = await fetchPlaceInfo(c.clientName, c.address, near)
         const cur = byId.get(c.id)!
-        byId.set(c.id, { ...cur, hoursAttempted: true, openingHours: hours ?? undefined })
+        byId.set(c.id, {
+          ...cur,
+          hoursAttempted: true,
+          openingHours: info?.openingHours ?? undefined,
+          businessStatus: info?.businessStatus ?? undefined,
+        })
         done++
         if (done % 5 === 0) setHoursProgress({ done, total: pending.length })
       }
