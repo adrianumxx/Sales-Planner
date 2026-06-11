@@ -25,6 +25,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    // Complete a magic-link sign-in when the user lands back on the app via the
+    // emailed link (parses the token from the URL, then cleans it up).
+    detectSessionInUrl: true,
+    flowType: 'pkce',
     storage: customStorage,
   },
 })

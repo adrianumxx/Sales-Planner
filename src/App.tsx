@@ -22,7 +22,7 @@ import type { VisitDay, DailyPlan } from './types'
 import type { CommandResult } from './components/CommandBar'
 
 function App() {
-  const { user, loading: authLoading, error: authError, login, logout, signup, checkEmailExists, isAuthenticated } = useAuth()
+  const { user, loading: authLoading, error: authError, login, logout, signup, sendMagicLink, checkEmailExists, isAuthenticated } = useAuth()
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loginLoading, setLoginLoading] = useState(false)
 
@@ -64,6 +64,7 @@ function App() {
       <LoginPage
         onLogin={handleLogin}
         onSignup={handleSignup}
+        onMagicLink={sendMagicLink}
         onCheckEmail={handleCheckEmail}
         loading={loginLoading}
         error={loginError || authError}

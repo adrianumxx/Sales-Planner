@@ -111,6 +111,26 @@ export function useAuth() {
     }
   }, [])
 
+  // Passwordless: email a one-click sign-in link. Creates the account on first
+  // use (shouldCreateUser), so colleagues need nothing but their @bacardi.com
+  // address. Requires working email delivery (custom SMTP).
+  const sendMagicLink = useCallback(async (email: string): Promise<{ ok: boolean; message: string }> => {
+    setError(null)
+    if (!email.endsWith('@bacardi.com')) {
+      return { ok: false, message: 'Only @bacardi.com emails are authorized' }
+    }
+    try {
+      const { error: err } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin, shouldCreateUser: true },
+      })
+      if (err) return { ok: false, message: err.message }
+      return { ok: true, message: 'Magic link sent — open your inbox (and spam) and click it to sign in.' }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'Could not send the link' }
+    }
+  }, [])
+
   const logout = useCallback(async () => {
     await supabase.auth.signOut()
     setUser(null)
@@ -125,6 +145,7 @@ export function useAuth() {
     error,
     login,
     signup,
+    sendMagicLink,
     logout,
     checkEmailExists,
     isAuthenticated: !!user,
