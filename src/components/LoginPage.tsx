@@ -1,18 +1,19 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mail, Lock, LogIn, Eye, EyeOff, UserPlus, Sparkles, CheckCircle2 } from 'lucide-react'
+import { Mail, Lock, LogIn, Eye, EyeOff, UserPlus, Sparkles, KeyRound } from 'lucide-react'
 import type { SignupResult } from '../hooks/useAuth'
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => Promise<boolean>
   onSignup?: (email: string, password: string) => Promise<SignupResult>
-  onMagicLink?: (email: string) => Promise<{ ok: boolean; message: string }>
+  onSendCode?: (email: string) => Promise<{ ok: boolean; message: string }>
+  onVerifyCode?: (email: string, token: string) => Promise<{ ok: boolean; message: string }>
   onCheckEmail?: (email: string) => Promise<boolean>
   loading?: boolean
   error?: string | null
 }
 
-export function LoginPage({ onLogin, onSignup, onMagicLink, loading = false, error = null }: LoginPageProps) {
+export function LoginPage({ onLogin, onSignup, onSendCode, onVerifyCode, loading = false, error = null }: LoginPageProps) {
   const [usePassword, setUsePassword] = useState(false)
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
@@ -20,24 +21,37 @@ export function LoginPage({ onLogin, onSignup, onMagicLink, loading = false, err
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
-  const [magicSent, setMagicSent] = useState(false)
+  const [codeSent, setCodeSent] = useState(false)
+  const [code, setCode] = useState('')
   const [sending, setSending] = useState(false)
 
   const emailValid = email.endsWith('@bacardi.com')
 
   const clearMessages = () => { setLocalError(null); setInfo(null) }
 
-  // ── Magic link ──
-  const handleMagic = async (e: React.FormEvent) => {
+  // ── Email code: step 1, send it ──
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault()
     clearMessages()
     if (!email) { setLocalError('Enter your email'); return }
     if (!emailValid) { setLocalError('Use a @bacardi.com email'); return }
     setSending(true)
-    const res = await onMagicLink?.(email)
+    const res = await onSendCode?.(email)
     setSending(false)
-    if (res?.ok) { setMagicSent(true); setInfo(res.message) }
-    else setLocalError(res?.message ?? 'Could not send the link')
+    if (res?.ok) { setCodeSent(true); setInfo(res.message) }
+    else setLocalError(res?.message ?? 'Could not send the code')
+  }
+
+  // ── Email code: step 2, verify it ──
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    clearMessages()
+    if (code.trim().length < 6) { setLocalError('Enter the 6-digit code'); return }
+    setSending(true)
+    const res = await onVerifyCode?.(email, code)
+    setSending(false)
+    // On success the app switches away automatically; only errors stay here.
+    if (!res?.ok) setLocalError(res?.message ?? 'Invalid or expired code')
   }
 
   // ── Password (fallback) ──
@@ -108,23 +122,49 @@ export function LoginPage({ onLogin, onSignup, onMagicLink, loading = false, err
           </AnimatePresence>
 
           {!usePassword ? (
-            /* ── Magic link (primary) ── */
-            magicSent ? (
-              <div className="text-center py-4 space-y-3">
-                <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto" />
-                <p className="text-white font-semibold text-sm">Check your email</p>
-                <p className="text-slate-400 text-xs">
-                  We sent a sign-in link to <span className="text-slate-200">{email}</span>. Click it to enter — no password needed.
-                </p>
-                <button
-                  onClick={() => { setMagicSent(false); clearMessages() }}
-                  className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold"
+            /* ── Email code (primary, passwordless) ── */
+            codeSent ? (
+              <form onSubmit={handleVerifyCode} className="space-y-4">
+                <div className="text-center">
+                  <KeyRound className="h-9 w-9 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-white font-semibold text-sm">Enter your code</p>
+                  <p className="text-slate-400 text-xs mt-1">
+                    We emailed a 6-digit code to <span className="text-slate-200">{email}</span>.
+                  </p>
+                </div>
+                <input
+                  type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                  value={code}
+                  onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••••"
+                  autoFocus
+                  className="w-full text-center tracking-[0.5em] text-xl font-bold py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  disabled={sending}
+                />
+                <motion.button
+                  type="submit" disabled={sending}
+                  whileHover={{ scale: sending ? 1 : 1.02 }} whileTap={{ scale: sending ? 1 : 0.98 }}
+                  className="w-full py-3 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
                 >
-                  Use a different email
-                </button>
-              </div>
+                  {sending ? (
+                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
+                    </motion.div>
+                  ) : (
+                    <><LogIn className="h-4 w-4" /> Verify & sign in</>
+                  )}
+                </motion.button>
+                <div className="flex items-center justify-between text-xs">
+                  <button type="button" onClick={() => { setCodeSent(false); setCode(''); clearMessages() }} className="text-slate-500 hover:text-slate-300 transition-colors">
+                    ← Change email
+                  </button>
+                  <button type="button" onClick={(e) => handleSendCode(e as unknown as React.FormEvent)} disabled={sending} className="text-indigo-400 hover:text-indigo-300 font-semibold transition-colors">
+                    Resend code
+                  </button>
+                </div>
+              </form>
             ) : (
-              <form onSubmit={handleMagic} className="space-y-4">
+              <form onSubmit={handleSendCode} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
                   <div className="relative">
@@ -147,7 +187,7 @@ export function LoginPage({ onLogin, onSignup, onMagicLink, loading = false, err
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
                     </motion.div>
                   ) : (
-                    <><Sparkles className="h-4 w-4" /> Send me a login link</>
+                    <><Sparkles className="h-4 w-4" /> Email me a sign-in code</>
                   )}
                 </motion.button>
                 <button
