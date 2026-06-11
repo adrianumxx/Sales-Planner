@@ -366,6 +366,7 @@ function buildPlan(
       lastVisitDays: client.lastVisitDays,
       openingHours:  client.openingHours,
       businessStatus: client.businessStatus,
+      hoursAttempted: client.hoursAttempted,
       outsideHours:  status[idx] === 'closed',
       byAppointment: status[idx] === 'after',
     }))

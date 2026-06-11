@@ -53,6 +53,9 @@ export interface VisitDay {
   lastVisitDays?: number;
   openingHours?: OpeningHours;
   businessStatus?: BusinessStatus;
+  /** True once Google Places was queried for this venue (to tell "no hours on
+   *  Google" apart from "not looked up yet"). */
+  hoursAttempted?: boolean;
   /** True when this visit's day has no verified open hours at all (rare). */
   outsideHours?: boolean;
   /** True when the venue opens only outside working hours (e.g. an evening bar)

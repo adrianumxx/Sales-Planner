@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { DailyPlan, VisitDay, OpeningHours } from '../types'
 import { getUrgencyBadge } from '../utils/planning'
 import { nearestCharger, resolveCoords } from '../utils/geo'
+import { MAPS_ENABLED } from '../utils/googleMaps'
 import { formatDateLabel, parseLocalDate, toDateStr, weekdayOf } from '../utils/date'
 import { VoiceNoteRecorder } from './VoiceNoteRecorder'
 
@@ -705,6 +706,15 @@ function VisitRow({
               <div className="flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-3 py-1 rounded-lg font-semibold" title="Open only in the evening — visit by appointment">
                 <Clock className="h-4 w-4" />
                 By appointment
+              </div>
+            )}
+
+            {/* We queried Google but it has no opening hours for this venue —
+                the time above is a default slot, not a confirmed open time. */}
+            {MAPS_ENABLED && visit.hoursAttempted && !visit.openingHours && !visit.businessStatus && !visit.byAppointment && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 px-3 py-1 rounded-lg" title="Google has no opening hours for this venue — check before visiting">
+                <Clock className="h-4 w-4" />
+                Hours n/a
               </div>
             )}
 
