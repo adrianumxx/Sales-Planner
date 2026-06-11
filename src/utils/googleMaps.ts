@@ -105,12 +105,18 @@ export async function geocodeAddress(query: string): Promise<{ lat: number; lon:
 }
 
 // ── Place info: opening hours + operating status (Places API) ────────────────
-// If the matched venue sits further than this from the client's known location,
-// the match is treated as low-confidence: hours are shown but never used to
-// constrain scheduling (see OpeningHours.verified).
-const HOURS_MATCH_RADIUS_KM = 0.6
-// v2: cache now also holds businessStatus, so use a fresh key.
+// Same-town sanity check: the search is biased with the (coarse) offline postal
+// centroid, which can sit a couple of km from the actual address, so we only
+// distrust a match when the returned venue is in a clearly different area (a
+// wrong-city same-name match). Within this radius the match is trusted and its
+// hours are used to constrain scheduling.
+const HOURS_MATCH_RADIUS_KM = 6
 const PLACE_CACHE_KEY = 'salesPlanner.placeCache.v2'
+
+/** Wipe the cached Places results so the next pass re-fetches fresh hours. */
+export function clearPlaceCache(): void {
+  try { localStorage.removeItem(PLACE_CACHE_KEY) } catch { /* ignore */ }
+}
 
 export interface PlaceInfo {
   /** Precise venue coordinates from Places — only set on a high-confidence match,

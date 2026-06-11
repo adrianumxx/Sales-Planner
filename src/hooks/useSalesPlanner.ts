@@ -3,7 +3,7 @@ import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates, resolveCoords } from '../utils/geo'
 import { weekdayOf } from '../utils/date'
-import { geocodeAddress, fetchPlaceInfo, MAPS_ENABLED } from '../utils/googleMaps'
+import { geocodeAddress, fetchPlaceInfo, clearPlaceCache, MAPS_ENABLED } from '../utils/googleMaps'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
@@ -178,6 +178,19 @@ export function useSalesPlanner(userId?: string) {
       setPlan(newPlan)
     }
   }, [data, homeAddress, returnAddress, visitsPerDay, adminDays, maxKmPerDay])
+
+  // Force a fresh opening-hours / business-status pull for every client (clears
+  // the cache and the attempted flags, so the Places pass re-runs). User-initiated
+  // from Settings, so the (re)spend is intentional.
+  const refreshPlaceData = useCallback(() => {
+    clearPlaceCache()
+    setData(prev => prev.map(c => ({
+      ...c,
+      hoursAttempted: false,
+      openingHours: undefined,
+      businessStatus: undefined,
+    })))
+  }, [setData])
 
   // Helper: regenerate the plan from the freshly-enriched client list.
   const replanFrom = useCallback((clients: Client[]) => {
@@ -595,6 +608,7 @@ export function useSalesPlanner(userId?: string) {
     setCarModel,
     geoProgress,
     hoursProgress,
+    refreshPlaceData,
     adminDays,
     toggleAdminDay,
     loadClients,

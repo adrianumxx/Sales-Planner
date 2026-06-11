@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging, Trash2 } from 'lucide-react'
+import { X, Settings, Sun, Moon, Sliders, RotateCcw, Car, BatteryCharging, Trash2, Clock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MAJOR_CITIES } from '../utils/geo'
+import { MAPS_ENABLED } from '../utils/googleMaps'
 
 interface SettingsPanelProps {
   homeAddress: string
@@ -20,6 +21,7 @@ interface SettingsPanelProps {
   onEvRangeChange: (km: number) => void
   onCarModelChange: (m: string) => void
   onDarkModeChange: (enabled: boolean) => void
+  onRefreshHours: () => void
   onClearAll: () => void
   onClose: () => void
   onRegenerate: () => void
@@ -44,6 +46,7 @@ export function SettingsPanel({
   onEvRangeChange,
   onCarModelChange,
   onDarkModeChange,
+  onRefreshHours,
   onClearAll,
   onClose,
 }: SettingsPanelProps) {
@@ -309,6 +312,32 @@ export function SettingsPanel({
                 )}
               </AnimatePresence>
             </motion.div>
+
+            {/* Refresh opening hours (re-pull from Google Places) */}
+            {MAPS_ENABLED && (
+              <motion.div
+                variants={sectionVariants}
+                initial="hidden"
+                animate="show"
+                transition={{ delay: 0.38 }}
+              >
+                <button
+                  onClick={() => {
+                    if (window.confirm('Re-fetch opening hours & closures for all venues from Google? This makes one Places lookup per client (cached afterwards).')) {
+                      onRefreshHours()
+                      onClose()
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 font-semibold hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all duration-300 text-sm"
+                >
+                  <Clock className="h-4 w-4" />
+                  Refresh opening hours
+                </button>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                  🕒 Re-pulls real opening hours & permanent closures. Run this once after updating venues — results are cached, so it won't keep spending.
+                </p>
+              </motion.div>
+            )}
 
             {/* Dark Mode Toggle */}
             <motion.div

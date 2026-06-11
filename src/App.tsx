@@ -481,6 +481,7 @@ function AppContent({ user, onLogout }: AppContentProps) {
           onEvRangeChange={planner.setEvRangeKm}
           onCarModelChange={planner.setCarModel}
           onDarkModeChange={planner.setDarkMode}
+          onRefreshHours={planner.refreshPlaceData}
           onClearAll={planner.clearAll}
           onClose={() => planner.setShowSettings(false)}
           onRegenerate={planner.regeneratePlan}
