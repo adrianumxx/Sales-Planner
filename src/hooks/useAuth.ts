@@ -111,10 +111,10 @@ export function useAuth() {
     }
   }, [])
 
-  // Passwordless: email a one-click sign-in link. Creates the account on first
-  // use (shouldCreateUser), so colleagues need nothing but their @bacardi.com
-  // address. Requires working email delivery (custom SMTP).
-  const sendMagicLink = useCallback(async (email: string): Promise<{ ok: boolean; message: string }> => {
+  // Passwordless: email a 6-digit sign-in code. Creates the account on first use
+  // (shouldCreateUser), so colleagues need nothing but their @bacardi.com address
+  // and the code. No redirect involved — works across devices.
+  const sendCode = useCallback(async (email: string): Promise<{ ok: boolean; message: string }> => {
     setError(null)
     if (!email.endsWith('@bacardi.com')) {
       return { ok: false, message: 'Only @bacardi.com emails are authorized' }
@@ -122,12 +122,32 @@ export function useAuth() {
     try {
       const { error: err } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: window.location.origin, shouldCreateUser: true },
+        options: { shouldCreateUser: true },
       })
       if (err) return { ok: false, message: err.message }
-      return { ok: true, message: 'Magic link sent — open your inbox (and spam) and click it to sign in.' }
+      return { ok: true, message: 'Code sent — check your inbox (and spam).' }
     } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : 'Could not send the link' }
+      return { ok: false, message: err instanceof Error ? err.message : 'Could not send the code' }
+    }
+  }, [])
+
+  // Verify the emailed 6-digit code and start the session.
+  const verifyCode = useCallback(async (email: string, token: string): Promise<{ ok: boolean; message: string }> => {
+    setError(null)
+    try {
+      const { data, error: err } = await supabase.auth.verifyOtp({ email, token: token.trim(), type: 'email' })
+      if (err) return { ok: false, message: err.message }
+      if (data.session?.user) {
+        setUser({
+          id: data.session.user.id,
+          email: data.session.user.email ?? '',
+          user_metadata: data.session.user.user_metadata,
+        })
+        return { ok: true, message: '' }
+      }
+      return { ok: false, message: 'Invalid or expired code' }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'Verification failed' }
     }
   }, [])
 
@@ -145,7 +165,8 @@ export function useAuth() {
     error,
     login,
     signup,
-    sendMagicLink,
+    sendCode,
+    verifyCode,
     logout,
     checkEmailExists,
     isAuthenticated: !!user,
