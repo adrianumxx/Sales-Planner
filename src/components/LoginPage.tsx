@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mail, Lock, LogIn, Eye, EyeOff, UserPlus } from 'lucide-react'
+import type { SignupResult } from '../hooks/useAuth'
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => Promise<boolean>
-  onSignup?: (email: string, password: string) => Promise<boolean>
+  onSignup?: (email: string, password: string) => Promise<SignupResult>
   onCheckEmail?: (email: string) => Promise<boolean>
   loading?: boolean
   error?: string | null
@@ -16,6 +17,7 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
   const validate = () => {
     if (!email) return 'Enter an email'
@@ -28,6 +30,7 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLocalError(null)
+    setInfo(null)
     const err = validate()
     if (err) { setLocalError(err); return }
 
@@ -35,10 +38,18 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
       const ok = await onLogin(email, password)
       if (!ok && !error) setLocalError('Invalid credentials')
     } else {
-      const ok = await onSignup?.(email, password)
-      if (!ok && !error) setLocalError('Sign-up failed')
+      const res = await onSignup?.(email, password)
+      if (res?.status === 'check-email') {
+        setMode('login')
+        setPassword('')
+        setInfo('Account created! Check your inbox (and spam) for the confirmation email, then sign in.')
+      }
+      // 'logged-in' → the app redirects automatically; 'error' → shown via `error`.
     }
   }
+
+  // Switching mode clears transient messages.
+  const switchMode = (m: 'login' | 'signup') => { setMode(m); setLocalError(null); setInfo(null) }
 
   const displayError = error || localError
 
@@ -68,7 +79,7 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
               <button
                 key={m}
                 type="button"
-                onClick={() => { setMode(m); setLocalError(null) }}
+                onClick={() => switchMode(m)}
                 className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
                   mode === m
                     ? 'bg-indigo-600 text-white shadow'
@@ -132,6 +143,20 @@ export function LoginPage({ onLogin, onSignup, loading = false, error = null }: 
                   className="bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2.5"
                 >
                   <p className="text-red-400 text-xs">{displayError}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Success / info (e.g. confirm-your-email) */}
+            <AnimatePresence>
+              {info && !displayError && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2.5"
+                >
+                  <p className="text-emerald-300 text-xs">{info}</p>
                 </motion.div>
               )}
             </AnimatePresence>

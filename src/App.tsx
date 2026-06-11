@@ -43,16 +43,14 @@ function App() {
     return success
   }
 
-  // Handle signup
+  // Handle signup — returns a status the LoginPage turns into clear feedback.
   const handleSignup = async (email: string, password: string) => {
     setLoginLoading(true)
     setLoginError(null)
-    const success = await signup(email, password)
+    const res = await signup(email, password)
     setLoginLoading(false)
-    if (!success) {
-      setLoginError('Sign-up failed')
-    }
-    return success
+    if (res.status === 'error') setLoginError(res.message)
+    return res
   }
 
   // Handle logout
