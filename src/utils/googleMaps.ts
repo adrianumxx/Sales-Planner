@@ -133,6 +133,11 @@ function savePlaceCache(c: Record<string, PlaceInfo>): void {
   try { localStorage.setItem(PLACE_CACHE_KEY, JSON.stringify(c)) } catch { /* quota */ }
 }
 
+// Last error from a Places call, surfaced in the UI so a misconfigured key /
+// disabled "Places API (New)" is diagnosable without opening the console.
+let lastPlacesError: string | null = null
+export function getLastPlacesError(): string | null { return lastPlacesError }
+
 let placesLib: any = null
 async function getPlacesLib(): Promise<any> {
   await loadGoogleMapsSDK()
@@ -180,9 +185,12 @@ export async function fetchPlaceInfo(
   const cache = loadPlaceCache()
   if (cache[cacheKey]) return cache[cacheKey]
 
-  const lib = await getPlacesLib().catch(() => null)
+  const lib = await getPlacesLib().catch((e) => { lastPlacesError = (e as Error)?.message || String(e); return null })
   const Place = lib?.Place
-  if (!Place) return null
+  if (!Place) {
+    if (!lastPlacesError) lastPlacesError = 'Places library failed to load (is "Places API (New)" enabled?)'
+    return null
+  }
 
   try {
     const req: any = {
@@ -195,6 +203,7 @@ export async function fetchPlaceInfo(
     if (near) req.locationBias = { lat: near.lat, lng: near.lon }
     const res: any = await withTimeout(Place.searchByText(req), 8000)
     if (res === null) return null // timeout / transient — retry later, don't cache
+    lastPlacesError = null // a response came back → the API is working
     const place = res?.places?.[0]
     if (!place) {
       // Negative cache: Google has no such venue — never re-charge for it.
@@ -222,6 +231,8 @@ export async function fetchPlaceInfo(
     cache[cacheKey] = info
     savePlaceCache(cache)
     return info
-  } catch { /* over-query / no result / API not enabled */ }
+  } catch (e) {
+    lastPlacesError = (e as Error)?.message || String(e)
+  }
   return null
 }
