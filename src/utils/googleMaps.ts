@@ -55,12 +55,14 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 }
 
 // ── Address → coords cache (survives reloads & re-uploads of the same clients) ──
+// `null` is a *negative* cache entry: Google has no match, so we never pay to
+// look the same address up again.
 const CACHE_KEY = 'salesPlanner.geocodeCache'
 
-function loadCache(): Record<string, [number, number]> {
+function loadCache(): Record<string, [number, number] | null> {
   try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}') } catch { return {} }
 }
-function saveCache(c: Record<string, [number, number]>): void {
+function saveCache(c: Record<string, [number, number] | null>): void {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(c)) } catch { /* quota */ }
 }
 const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ')
@@ -68,16 +70,15 @@ const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, ' ')
 let geocoder: any = null
 
 /**
- * Geocode one address to {lat, lon}; cached. Returns null if unresolved or if
- * the API key is not configured. Safe to call: if MAPS_API_KEY is not set,
- * returns null gracefully.
+ * Geocode one address to {lat, lon}; cached (positive AND negative, so a miss is
+ * never re-charged). Returns null if unresolved or if the API key isn't set.
  */
 export async function geocodeAddress(query: string): Promise<{ lat: number; lon: number } | null> {
   if (!MAPS_API_KEY) return null // No key configured, fall back to offline
   const key = norm(query)
   if (!key) return null
   const cache = loadCache()
-  if (cache[key]) return { lat: cache[key][0], lon: cache[key][1] }
+  if (key in cache) { const v = cache[key]; return v ? { lat: v[0], lon: v[1] } : null }
 
   try {
     await loadGoogleMapsSDK()
@@ -90,6 +91,7 @@ export async function geocodeAddress(query: string): Promise<{ lat: number; lon:
   if (!geocoder) geocoder = new w.google.maps.Geocoder()
 
   const res: any = await withTimeout(geocoder.geocode({ address: query, region: 'be' }), 8000)
+  if (res === null) return null // timeout / transient error — don't poison the cache
   const loc = res?.results?.[0]?.geometry?.location
   if (loc) {
     const lat = loc.lat(), lon = loc.lng()
@@ -97,6 +99,8 @@ export async function geocodeAddress(query: string): Promise<{ lat: number; lon:
     saveCache(cache)
     return { lat, lon }
   }
+  cache[key] = null // negative cache: Google genuinely has no match
+  saveCache(cache)
   return null
 }
 
@@ -109,6 +113,9 @@ const HOURS_MATCH_RADIUS_KM = 0.6
 const PLACE_CACHE_KEY = 'salesPlanner.placeCache.v2'
 
 export interface PlaceInfo {
+  /** Precise venue coordinates from Places — only set on a high-confidence match,
+   *  so a single Places call can also serve as the geocoder (no separate call). */
+  location: { lat: number; lon: number } | null
   openingHours: OpeningHours | null
   businessStatus: BusinessStatus | null
 }
@@ -181,8 +188,15 @@ export async function fetchPlaceInfo(
     }
     if (near) req.locationBias = { lat: near.lat, lng: near.lon }
     const res: any = await withTimeout(Place.searchByText(req), 8000)
+    if (res === null) return null // timeout / transient — retry later, don't cache
     const place = res?.places?.[0]
-    if (!place) return null
+    if (!place) {
+      // Negative cache: Google has no such venue — never re-charge for it.
+      const empty: PlaceInfo = { location: null, openingHours: null, businessStatus: null }
+      cache[cacheKey] = empty
+      savePlaceCache(cache)
+      return empty
+    }
 
     let verified = true
     if (near && place.location) {
@@ -192,8 +206,11 @@ export async function fetchPlaceInfo(
     const periods = place.regularOpeningHours?.periods
     const status = VALID_STATUS.includes(place.businessStatus) ? (place.businessStatus as BusinessStatus) : null
     const info: PlaceInfo = {
+      // Trust the precise location only on a confident match (else geocoding fills in).
+      location: verified && place.location
+        ? { lat: place.location.lat(), lon: place.location.lng() }
+        : null,
       openingHours: periods?.length ? { days: periodsToDays(periods), verified } : null,
-      // Only trust a "closed" verdict when the match is reliable.
       businessStatus: status && (verified || status === 'OPERATIONAL') ? status : null,
     }
     cache[cacheKey] = info
