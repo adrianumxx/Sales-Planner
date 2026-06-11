@@ -3,7 +3,7 @@ import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
 import { getCityCoordinates, resolveCoords } from '../utils/geo'
 import { weekdayOf } from '../utils/date'
-import { geocodeAddress, fetchPlaceInfo, clearPlaceCache, MAPS_ENABLED } from '../utils/googleMaps'
+import { geocodeAddress, fetchPlaceInfo, clearPlaceCache, getLastPlacesError, MAPS_ENABLED } from '../utils/googleMaps'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
 import { uploadVoiceNote, deleteVoiceNoteCloud, listVoiceNotes, downloadVoiceNote } from '../utils/voiceCloud'
 import { useLocalStorage } from './useLocalStorage'
@@ -54,6 +54,9 @@ export function useSalesPlanner(userId?: string) {
   // Geocoding + opening-hours progress (API key configured via VITE_GOOGLE_MAPS_API_KEY)
   const [geoProgress, setGeoProgress] = useState<{ done: number; total: number } | null>(null)
   const [hoursProgress, setHoursProgress] = useState<{ done: number; total: number } | null>(null)
+  // Non-null when the Places pass ran but every call failed (e.g. "Places API
+  // (New)" not enabled) — surfaced as a diagnostic banner.
+  const [placesError, setPlacesError] = useState<string | null>(null)
 
   const [filter, setFilter] = useState<'all' | 'urgent' | 'attention' | 'ok'>('all')
   const [showSettings, setShowSettings] = useState(false)
@@ -248,6 +251,10 @@ export function useSalesPlanner(userId?: string) {
       setData(updated)
       replanFrom(updated)
       setHoursProgress(null)
+      // If nothing at all came back and Google reported an error, flag it so the
+      // user can fix their Cloud setup (almost always: enable "Places API (New)").
+      const gotAny = updated.some(c => c.openingHours || c.businessStatus)
+      setPlacesError(!gotAny ? getLastPlacesError() : null)
     })()
     return () => { cancelled = true }
   }, [data, replanFrom])
@@ -608,6 +615,7 @@ export function useSalesPlanner(userId?: string) {
     setCarModel,
     geoProgress,
     hoursProgress,
+    placesError,
     refreshPlaceData,
     adminDays,
     toggleAdminDay,

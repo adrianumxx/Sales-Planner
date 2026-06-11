@@ -302,6 +302,24 @@ function AppContent({ user, onLogout }: AppContentProps) {
                 )}
               </AnimatePresence>
 
+              {/* Places misconfiguration diagnostic (e.g. Places API New not enabled) */}
+              <AnimatePresence>
+                {planner.placesError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="px-4 py-3 rounded-xl text-sm border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"
+                  >
+                    <div className="font-semibold mb-0.5">⚠️ Opening hours unavailable</div>
+                    <div className="text-xs opacity-90">
+                      Google Places returned no data. In Google Cloud, enable <span className="font-semibold">“Places API (New)”</span> and make sure the API key isn’t restricted away from it. Then open Settings → “Refresh opening hours”.
+                    </div>
+                    <div className="text-[11px] mt-1 font-mono opacity-70 break-all">{planner.placesError}</div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Opening-hours fetch progress (Google Places) */}
               <AnimatePresence>
                 {planner.hoursProgress && (
