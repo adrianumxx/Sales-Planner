@@ -27,6 +27,16 @@ function relativeDayLabel(dateStr: string): string {
   return formatDateLabel(dateStr)
 }
 
+/** Muted card shown in a focus column when Today or Tomorrow has no visits. */
+function FocusPlaceholder({ label }: { label: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-300/70 dark:border-slate-600/70 bg-white/30 dark:bg-slate-900/20 p-6 flex flex-col items-center justify-center text-center">
+      <div className="font-semibold text-sm text-slate-700 dark:text-slate-200 mb-1">{label}</div>
+      <div className="text-xs text-slate-400 dark:text-slate-500">No visits scheduled</div>
+    </div>
+  )
+}
+
 /**
  * Short opening-hours label for a venue on a given date, e.g. "09:00–18:00"
  * or "Closed". Returns null when hours are unknown (nothing to show).
@@ -211,7 +221,20 @@ export function PlanViewer({
 }: PlanViewerProps) {
   const handleSaveVoiceNote = onSaveVoiceNote ?? (() => {})
 
-  const weeks = useMemo(() => buildWeeks(plan), [plan])
+  // Today & Tomorrow get their own two-column section at the top; the week list
+  // below covers everything from the day after tomorrow onwards.
+  const todayDateStr = toDateStr(new Date())
+  const tomorrowDateStr = useMemo(() => {
+    const t = new Date(); t.setDate(t.getDate() + 1); return toDateStr(t)
+  }, [])
+  const todayDay = useMemo(() => plan.find(d => d.date === todayDateStr), [plan, todayDateStr])
+  const tomorrowDay = useMemo(() => plan.find(d => d.date === tomorrowDateStr), [plan, tomorrowDateStr])
+  const restPlan = useMemo(
+    () => plan.filter(d => d.date !== todayDateStr && d.date !== tomorrowDateStr),
+    [plan, todayDateStr, tomorrowDateStr],
+  )
+
+  const weeks = useMemo(() => buildWeeks(restPlan), [restPlan])
 
   // EV charging suggestions per day (only when an EV range is set).
   const chargeByDate = useMemo(() => {
@@ -223,7 +246,7 @@ export function PlanViewer({
 
   // Expanded weeks: default to the current week (or the first one).
   const [expanded, setExpanded] = useState<Set<string>>(() => {
-    const w = buildWeeks(plan)
+    const w = buildWeeks(restPlan)
     if (!w.length) return new Set()
     const initial = w.find(g => g.key === todayMonday) ?? w[0]
     return new Set([initial.key])
@@ -257,6 +280,109 @@ export function PlanViewer({
       </motion.div>
     )
   }
+
+  // A single day card (header + visits). Reused by the week list and the
+  // Today/Tomorrow two-column section.
+  const renderDay = (day: DailyPlan) => (
+    <div
+      key={day.date}
+      className="rounded-xl overflow-hidden bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/60"
+    >
+      {/* Day header */}
+      <div className="flex justify-between items-center gap-2 px-3 sm:px-4 py-2 border-l-4 border-indigo-500 dark:border-cyan-400 bg-slate-50/60 dark:bg-slate-800/40">
+        <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-50 truncate">
+          {relativeDayLabel(day.date)}
+        </h3>
+        <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
+          <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
+          <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.totalKm}km</span>
+          {evRangeKm > 0 && (
+            (chargeByDate[day.date]?.length ?? 0) > 0 ? (
+              <span className="flex items-center gap-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-lg font-semibold" title="Charging stop(s) recommended on this day">
+                <Zap className="h-3.5 w-3.5" />{chargeByDate[day.date].length} charge
+              </span>
+            ) : (
+              <span className="hidden sm:flex items-center gap-0.5 bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-lg font-medium" title={`Within range — ${day.totalKm} of ${evRangeKm} km`}>
+                <Zap className="h-3.5 w-3.5" />in range
+              </span>
+            )
+          )}
+          <span className="hidden sm:inline bg-slate-200/70 dark:bg-slate-700/60 px-2 py-0.5 rounded-lg font-medium" title="Estimated driving time (round trip)">
+            {driveTimeLabel(day.totalKm)}
+          </span>
+          {editable && onReoptimizeDay && day.visits.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onReoptimizeDay(day.date) }}
+              className="flex items-center gap-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded-lg font-semibold transition-colors"
+              title="Re-optimize this day's driving route"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Optimize</span>
+            </button>
+          )}
+          {day.visits.length > 0 && (
+            <a
+              href={dayRouteUrl(day.visits, chargeByDate[day.date])}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-lg font-semibold transition-colors"
+              title="Navigate the whole day (clients + charging) in Google Maps"
+            >
+              <Navigation className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Navigate</span>
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Visits */}
+      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+        {day.visits.map((visit) => {
+          const charge = chargeByDate[day.date]?.find(c => c.afterVisitId === visit.id)
+          return (
+            <React.Fragment key={visit.id}>
+              <VisitRow
+                visit={visit}
+                dayDate={day.date}
+                completed={completedVisits.has(visit.id)}
+                noteText={notes[visit.id] || ''}
+                hasVoiceNote={!!voiceNotes[visit.id]}
+                voiceNoteUrl={voiceNotes[visit.id]}
+                editable={editable}
+                isDragging={dragged?.visit.id === visit.id}
+                isDropActive={!!dragged && dragged.visit.id !== visit.id}
+                onToggleComplete={() => onToggleComplete(visit.id)}
+                onUpdateNote={(note) => onUpdateNote(visit.id, note)}
+                onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
+                onEdit={() => onEditVisit?.(visit, day.date)}
+                onDragStart={() => setDragged({ visit, fromDate: day.date })}
+                onDragEnd={() => setDragged(null)}
+                onDropOn={() => handleDropOn(day.date, visit)}
+              />
+              {charge && (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${charge.lat},${charge.lon}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 text-green-800 dark:text-green-200 transition-colors"
+                  title="Open this charging station in Google Maps"
+                >
+                  <Zap className="h-4 w-4 flex-shrink-0" />
+                  <span className="text-xs sm:text-sm">
+                    <span className="font-semibold">Charge here</span>
+                    {' · '}{charge.name || 'Charging station'}
+                    <span className="opacity-70"> · {charge.distanceKm} km from {charge.town} · ~{charge.atKm} km driven</span>
+                  </span>
+                  <Navigation className="h-3.5 w-3.5 ml-auto flex-shrink-0 opacity-70" />
+                </a>
+              )}
+            </React.Fragment>
+          )
+        })}
+      </div>
+    </div>
+  )
 
   const renderWeek = (week: WeekGroup) => {
     const isOpen = expanded.has(week.key)
@@ -305,106 +431,7 @@ export function PlanViewer({
               className="overflow-hidden"
             >
               <div className="p-2 sm:p-3 space-y-3">
-                {week.days.map((day) => (
-                  <div
-                    key={day.date}
-                    className="rounded-xl overflow-hidden bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/60"
-                  >
-                    {/* Day header */}
-                    <div className="flex justify-between items-center gap-2 px-3 sm:px-4 py-2 border-l-4 border-indigo-500 dark:border-cyan-400 bg-slate-50/60 dark:bg-slate-800/40">
-                      <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-50 truncate">
-                        {relativeDayLabel(day.date)}
-                      </h3>
-                      <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 flex-shrink-0">
-                        <span className="bg-indigo-100 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.visits.length}v</span>
-                        <span className="bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded-lg font-semibold">{day.totalKm}km</span>
-                        {evRangeKm > 0 && (
-                          (chargeByDate[day.date]?.length ?? 0) > 0 ? (
-                            <span className="flex items-center gap-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-lg font-semibold" title="Charging stop(s) recommended on this day">
-                              <Zap className="h-3.5 w-3.5" />{chargeByDate[day.date].length} charge
-                            </span>
-                          ) : (
-                            <span className="hidden sm:flex items-center gap-0.5 bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-lg font-medium" title={`Within range — ${day.totalKm} of ${evRangeKm} km`}>
-                              <Zap className="h-3.5 w-3.5" />in range
-                            </span>
-                          )
-                        )}
-                        <span className="hidden sm:inline bg-slate-200/70 dark:bg-slate-700/60 px-2 py-0.5 rounded-lg font-medium" title="Estimated driving time (round trip)">
-                          {driveTimeLabel(day.totalKm)}
-                        </span>
-                        {editable && onReoptimizeDay && day.visits.length > 1 && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onReoptimizeDay(day.date) }}
-                            className="flex items-center gap-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded-lg font-semibold transition-colors"
-                            title="Re-optimize this day's driving route"
-                          >
-                            <Wand2 className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">Optimize</span>
-                          </button>
-                        )}
-                        {day.visits.length > 0 && (
-                          <a
-                            href={dayRouteUrl(day.visits, chargeByDate[day.date])}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-lg font-semibold transition-colors"
-                            title="Navigate the whole day (clients + charging) in Google Maps"
-                          >
-                            <Navigation className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">Navigate</span>
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Visits */}
-                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {day.visits.map((visit) => {
-                        const charge = chargeByDate[day.date]?.find(c => c.afterVisitId === visit.id)
-                        return (
-                          <React.Fragment key={visit.id}>
-                            <VisitRow
-                              visit={visit}
-                              dayDate={day.date}
-                              completed={completedVisits.has(visit.id)}
-                              noteText={notes[visit.id] || ''}
-                              hasVoiceNote={!!voiceNotes[visit.id]}
-                              voiceNoteUrl={voiceNotes[visit.id]}
-                              editable={editable}
-                              isDragging={dragged?.visit.id === visit.id}
-                              isDropActive={!!dragged && dragged.visit.id !== visit.id}
-                              onToggleComplete={() => onToggleComplete(visit.id)}
-                              onUpdateNote={(note) => onUpdateNote(visit.id, note)}
-                              onSaveVoiceNote={(audio) => handleSaveVoiceNote(visit.id, audio)}
-                              onEdit={() => onEditVisit?.(visit, day.date)}
-                              onDragStart={() => setDragged({ visit, fromDate: day.date })}
-                              onDragEnd={() => setDragged(null)}
-                              onDropOn={() => handleDropOn(day.date, visit)}
-                            />
-                            {charge && (
-                              <a
-                                href={`https://www.google.com/maps/search/?api=1&query=${charge.lat},${charge.lon}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 text-green-800 dark:text-green-200 transition-colors"
-                                title="Open this charging station in Google Maps"
-                              >
-                                <Zap className="h-4 w-4 flex-shrink-0" />
-                                <span className="text-xs sm:text-sm">
-                                  <span className="font-semibold">Charge here</span>
-                                  {' · '}{charge.name || 'Charging station'}
-                                  <span className="opacity-70"> · {charge.distanceKm} km from {charge.town} · ~{charge.atKm} km driven</span>
-                                </span>
-                                <Navigation className="h-3.5 w-3.5 ml-auto flex-shrink-0 opacity-70" />
-                              </a>
-                            )}
-                          </React.Fragment>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
+                {week.days.map(renderDay)}
               </div>
             </motion.div>
           )}
@@ -424,6 +451,18 @@ export function PlanViewer({
 
   return (
     <div className="space-y-4">
+      {/* Today / Tomorrow — side-by-side focus columns */}
+      {(todayDay || tomorrowDay) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+          {todayDay
+            ? renderDay(todayDay)
+            : <FocusPlaceholder label="Today" />}
+          {tomorrowDay
+            ? renderDay(tomorrowDay)
+            : <FocusPlaceholder label="Tomorrow" />}
+        </div>
+      )}
+
       {horizonList.map(renderWeek)}
 
       {backlog.length > 0 && (

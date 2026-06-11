@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Client, DailyPlan, VisitDay } from '../types'
 import { generatePlan, recomputeDay, rollForwardDates } from '../utils/planning'
-import { getCityCoordinates } from '../utils/geo'
+import { getCityCoordinates, resolveCoords } from '../utils/geo'
 import { weekdayOf } from '../utils/date'
 import { geocodeAddress, fetchPlaceInfo, MAPS_ENABLED } from '../utils/googleMaps'
 import { getAllVoiceNotes, putVoiceNote, deleteVoiceNote } from '../utils/voiceStore'
@@ -179,86 +179,102 @@ export function useSalesPlanner(userId?: string) {
     }
   }, [data, homeAddress, returnAddress, visitsPerDay, adminDays, maxKmPerDay])
 
-  // Precise geocoding pass (if VITE_GOOGLE_MAPS_API_KEY is set). Resolves each
-  // client's street address to exact coordinates, caches them, then regenerates
-  // the plan so routing/distances reflect the real locations. Each client is
-  // attempted once (geocoded flag), so this is a no-op after the first pass.
-  useEffect(() => {
-    const pending = data.filter(c => !c.geocoded && (c.address || c.town))
-    if (pending.length === 0) return
+  // Helper: regenerate the plan from the freshly-enriched client list.
+  const replanFrom = useCallback((clients: Client[]) => {
+    const homeCoords = getCityCoordinates(homeAddress)
+    if (!homeCoords) return
+    const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
+    setPlan(generatePlan(clients, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
+  }, [homeAddress, returnAddress, visitsPerDay, adminDays, maxKmPerDay])
 
-    let cancelled = false
-    ;(async () => {
-      setGeoProgress({ done: 0, total: pending.length })
-
-      const byId = new Map(data.map(c => [c.id, c]))
-      let done = 0
-      for (const c of pending) {
-        if (cancelled) return
-        const p = await geocodeAddress(c.address ? `${c.address}, Belgium` : `${c.town}, Belgium`)
-        const cur = byId.get(c.id)!
-        byId.set(c.id, p ? { ...cur, lat: p.lat, lon: p.lon, geocoded: true } : { ...cur, geocoded: true })
-        done++
-        if (done % 5 === 0) setGeoProgress({ done, total: pending.length })
-      }
-      if (cancelled) return
-
-      const updated = data.map(c => byId.get(c.id)!)
-      setData(updated)
-      const homeCoords = getCityCoordinates(homeAddress)
-      if (homeCoords) {
-        const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
-        setPlan(generatePlan(updated, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
-      }
-      setGeoProgress(null)
-    })()
-    return () => { cancelled = true }
-  }, [data])
-
-  // Opening-hours pass (Places API). Runs after geocoding finishes so venues are
-  // matched near their precise location. Each client is attempted once
-  // (hoursAttempted), cached, then the plan is regenerated so the engine can
-  // avoid closed days and slot visits inside opening hours.
+  // ── Primary enrichment pass: ONE Places call per client (cost-optimised) ──
+  // A single Places lookup returns precise coordinates + opening hours + business
+  // status, so it doubles as the geocoder — no separate Geocoding call for the
+  // venues Google knows. The search is biased with the free offline postal/town
+  // centroid, so it stays accurate without a prior paid geocode. Each client is
+  // attempted once (hoursAttempted) and cached (incl. negative results), so this
+  // never re-charges. Runs 6-at-a-time for speed.
   useEffect(() => {
     if (!MAPS_ENABLED) return
-    // Wait until geocoding is done — better location bias, fewer mismatches.
-    if (data.some(c => !c.geocoded && (c.address || c.town))) return
     const pending = data.filter(c => !c.hoursAttempted && c.clientName)
     if (pending.length === 0) return
 
     let cancelled = false
     ;(async () => {
       setHoursProgress({ done: 0, total: pending.length })
-
       const byId = new Map(data.map(c => [c.id, c]))
       let done = 0
-      for (const c of pending) {
-        if (cancelled) return
-        const near = c.lat != null && c.lon != null ? { lat: c.lat, lon: c.lon } : undefined
-        const info = await fetchPlaceInfo(c.clientName, c.address, near)
-        const cur = byId.get(c.id)!
-        byId.set(c.id, {
-          ...cur,
-          hoursAttempted: true,
-          openingHours: info?.openingHours ?? undefined,
-          businessStatus: info?.businessStatus ?? undefined,
-        })
-        done++
-        if (done % 5 === 0) setHoursProgress({ done, total: pending.length })
+      let cursor = 0
+      const worker = async () => {
+        while (!cancelled) {
+          const i = cursor++
+          if (i >= pending.length) return
+          const c = pending[i]
+          // Free bias: an existing precise coord, else the offline centroid.
+          const off = c.lat != null && c.lon != null
+            ? { lat: c.lat, lon: c.lon }
+            : resolveCoords(c.town, c.address) ?? undefined
+          let info = null
+          try { info = await fetchPlaceInfo(c.clientName, c.address, off) } catch { info = null }
+          const cur = byId.get(c.id)!
+          byId.set(c.id, {
+            ...cur,
+            hoursAttempted: true,
+            openingHours: info?.openingHours ?? undefined,
+            businessStatus: info?.businessStatus ?? undefined,
+            // Places gave precise coords → also satisfies geocoding (one call, not two).
+            ...(info?.location ? { lat: info.location.lat, lon: info.location.lon, geocoded: true } : {}),
+          })
+          done++
+          if (done % 5 === 0 || done === pending.length) setHoursProgress({ done, total: pending.length })
+        }
       }
+      await Promise.all(Array.from({ length: Math.min(6, pending.length) }, worker))
       if (cancelled) return
-
       const updated = data.map(c => byId.get(c.id)!)
       setData(updated)
-      const homeCoords = getCityCoordinates(homeAddress)
-      if (homeCoords) {
-        const end = (returnAddress && getCityCoordinates(returnAddress)) || homeCoords
-        setPlan(generatePlan(updated, homeCoords, visitsPerDay, adminDays, maxKmPerDay, end))
-      }
+      replanFrom(updated)
       setHoursProgress(null)
     })()
     return () => { cancelled = true }
-  }, [data])
+  }, [data, replanFrom])
+
+  // ── Geocoding fallback: only the venues Places couldn't locate ──
+  // Cheap Geocoding API, run after the Places pass has attempted everyone, so it
+  // touches just the handful of unmatched venues (the rest are already located).
+  useEffect(() => {
+    if (MAPS_ENABLED && data.some(c => !c.hoursAttempted && c.clientName)) return
+    const pending = data.filter(c => !c.geocoded && (c.address || c.town))
+    if (pending.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      setGeoProgress({ done: 0, total: pending.length })
+      const byId = new Map(data.map(c => [c.id, c]))
+      let done = 0
+      let cursor = 0
+      const worker = async () => {
+        while (!cancelled) {
+          const i = cursor++
+          if (i >= pending.length) return
+          const c = pending[i]
+          let p = null
+          try { p = await geocodeAddress(c.address ? `${c.address}, Belgium` : `${c.town}, Belgium`) } catch { p = null }
+          const cur = byId.get(c.id)!
+          byId.set(c.id, p ? { ...cur, lat: p.lat, lon: p.lon, geocoded: true } : { ...cur, geocoded: true })
+          done++
+          if (done % 5 === 0 || done === pending.length) setGeoProgress({ done, total: pending.length })
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(6, pending.length) }, worker))
+      if (cancelled) return
+      const updated = data.map(c => byId.get(c.id)!)
+      setData(updated)
+      replanFrom(updated)
+      setGeoProgress(null)
+    })()
+    return () => { cancelled = true }
+  }, [data, replanFrom])
 
   // Mark/unmark a day as admin. Visits reflow onto the next free workdays,
   // preserving order, ids and manual edits (no full regeneration).
